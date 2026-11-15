@@ -1,4 +1,4 @@
-import { referenceSlice, referenceZ } from './baseline.ts'
+import { personalZ, referenceSlice } from './baseline.ts'
 import type { DayRecord, MeasureMeta } from './domains.ts'
 
 export const FOREST_SEED = 20261115
@@ -13,13 +13,24 @@ export type ForestDriver = {
   z: number
 }
 
+export type ForestSol = {
+  sol: number
+  day: number
+  phase?: string
+  anomaly: number
+  drivers: ForestDriver[]
+}
+
 export type ForestReport = {
   anomaly: number | null
   flaggedSols: number
   sols: number
   drivers: ForestDriver[]
   series: number[]
+  perSol: ForestSol[]
   referenceSols: number
+  /** `pre` when the file has a PRE phase; otherwise the opening sols. */
+  referenceKind: 'pre' | 'first'
 }
 
 type Tree = {
@@ -166,19 +177,42 @@ function usableMeasures(days: DayRecord[], measures: MeasureMeta[]): MeasureMeta
   })
 }
 
+function solDrivers(days: DayRecord[], index: number, measures: MeasureMeta[]): ForestDriver[] {
+  const drivers: ForestDriver[] = []
+  for (const measure of measures) {
+    const z = personalZ(days, index, measure)
+    if (z == null) continue
+    drivers.push({
+      feature: measure.key,
+      label: measure.label,
+      domain: measure.domain,
+      z: Math.round(z * 100) / 100,
+    })
+  }
+  drivers.sort((a, b) => b.z - a.z)
+  return drivers.slice(0, 3)
+}
+
 /**
- * Isolation forest trained on the person's first sols (default 14).
- * A missing cell is filled with the reference mean only inside the matrix.
- * The day record is not rewritten, and a missing measure is not a driver.
+ * Isolation forest (200 trees, contamination 0.02) trained on the person's
+ * reference period: PRE_TEST rows when the file has them, otherwise the first
+ * 14 sols. Each sol gets an anomaly score and its 3 strongest drivers from
+ * the personal rolling baseline (or that reference window when fewer than
+ * two earlier sols exist). A missing cell is filled with the reference mean
+ * only inside the matrix. The day record is not rewritten, and a missing
+ * measure is not a driver.
  */
 export function scoreForest(days: DayRecord[], measures: MeasureMeta[]): ForestReport {
+  const hasPre = days.some((day) => typeof day.phase === 'string' && /^PRE/i.test(day.phase))
   const empty: ForestReport = {
     anomaly: null,
     flaggedSols: 0,
     sols: days.length,
     drivers: [],
     series: [],
+    perSol: [],
     referenceSols: 0,
+    referenceKind: hasPre ? 'pre' : 'first',
   }
   let selected = usableMeasures(days, measures)
   const reference = referenceSlice(days)
@@ -201,7 +235,8 @@ export function scoreForest(days: DayRecord[], measures: MeasureMeta[]): ForestR
   if (selected.length === 0 || reference.length === 0) return empty
 
   const raw: number[][] = days.map((day) => selected.map((measure) => day.values[measure.key] ?? Number.NaN))
-  const refRows = raw.slice(0, reference.length)
+  const inReference = days.map((day) => reference.includes(day))
+  const refRows = raw.filter((_, index) => inReference[index])
   const fill = selected.map((measure, index) => {
     const seen: number[] = []
     for (const row of refRows) {
@@ -212,7 +247,7 @@ export function scoreForest(days: DayRecord[], measures: MeasureMeta[]): ForestR
     return seen.reduce((sum, value) => sum + value, 0) / seen.length
   })
   const matrix = raw.map((row) => row.map((value, index) => (Number.isFinite(value) ? value : (fill[index] ?? 0))))
-  const nominal = matrix.slice(0, reference.length)
+  const nominal = matrix.filter((_, index) => inReference[index])
   const rng = mulberry32(FOREST_SEED)
   const train = augment(nominal, rng)
   const { mean, std } = columnMeanStd(train)
@@ -255,31 +290,27 @@ export function scoreForest(days: DayRecord[], measures: MeasureMeta[]): ForestR
   const sorted = trainScores.slice().sort((a, b) => a - b)
   const offset = percentile(sorted, FOREST_CONTAMINATION * 100)
   const decision = matrix.map((row) => scoreOf(row) - offset)
-  const normalLevel = percentile(decision.slice(0, reference.length).sort((a, b) => a - b), 50)
+  const referenceDecisions = decision.filter((_, index) => inReference[index]).sort((a, b) => a - b)
+  const normalLevel = percentile(referenceDecisions, 50)
   const series = decision.map((score) => toPercent(score, normalLevel))
   const flaggedSols = decision.filter((score) => score < 0).length
   const last = days.length - 1
-  const drivers: ForestDriver[] = []
-  for (const measure of selected) {
-    const value = days[last]?.values[measure.key]
-    if (typeof value !== 'number') continue
-    const z = referenceZ(days, last, measure)
-    if (z == null || z < 2) continue
-    drivers.push({
-      feature: measure.key,
-      label: measure.label,
-      domain: measure.domain,
-      z: Math.round(z * 100) / 100,
-    })
-  }
-  drivers.sort((a, b) => b.z - a.z)
+  const perSol: ForestSol[] = days.map((day, index) => ({
+    sol: day.sol,
+    day: day.day,
+    ...(day.phase ? { phase: day.phase } : {}),
+    anomaly: series[index] ?? 0,
+    drivers: solDrivers(days, index, selected),
+  }))
 
   return {
     anomaly: series[last] ?? null,
     flaggedSols,
     sols: days.length,
-    drivers: drivers.slice(0, 3),
+    drivers: perSol[last]?.drivers ?? [],
     series,
+    perSol,
     referenceSols: reference.length,
+    referenceKind: hasPre ? 'pre' : 'first',
   }
 }

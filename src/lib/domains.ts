@@ -26,6 +26,8 @@ export type DayRecord = {
   day: number
   date?: string
   subject: string
+  /** Study phase when the file has one, such as PRE_TEST. Not a measure. */
+  phase?: string
   values: Record<string, number>
   hr?: number
   hrv?: number

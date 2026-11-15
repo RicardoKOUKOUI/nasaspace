@@ -220,6 +220,13 @@ export default function App() {
   const ss = String(clock % 60).padStart(2, '0')
   const refStats = !showingDemo && metric ? columnStats(valuesOf(referenceSlice(days), metric.id)) : null
   const roll = !showingDemo && metric ? rollingBaseline(days, days.length - 1, metric.id) : null
+  const flaggedSols = !showingDemo && forest?.perSol
+    ? forest.perSol
+        .filter((item) => item.anomaly >= 40 && item.drivers.some((driver) => driver.z >= 2))
+        .slice()
+        .sort((a, b) => b.anomaly - a.anomaly)
+        .slice(0, 3)
+    : []
   const readout = report.readout.length
     ? report.readout
     : (bundle?.measures ?? []).slice(0, 6).map((measure) => {
@@ -291,7 +298,10 @@ export default function App() {
                 : ''}
             </p>
             {!showingDemo && forest?.referenceSols ? (
-              <p className="hint">Reference: first {forest.referenceSols} sols of this subject. Missing cells stay empty.</p>
+              <p className="hint">
+                Reference: {forest.referenceKind === 'pre' ? `PRE_TEST (${forest.referenceSols} sols)` : `first ${forest.referenceSols} sols`} of this subject.
+                Drivers use the rolling mean and SD, or that reference when fewer than two earlier sols exist. Missing cells stay empty.
+              </p>
             ) : null}
           </div>
           {report.axes.map((axis) => (
@@ -450,10 +460,14 @@ export default function App() {
               </article>
             )
           })}
-          {!showingDemo && forest?.drivers?.length > 0 && (
+          {!showingDemo && flaggedSols.length > 0 && (
             <div className="alert degraded">
               <b>Top drivers</b>
-              <p>{forest.drivers.map((item) => `${item.label || item.feature} (${item.domain}) |z| ${item.z}`).join(' · ')}</p>
+              {flaggedSols.map((item) => (
+                <p key={`${item.phase ?? ''}:${item.day}`}>
+                  Sol {item.sol}{item.phase ? ` · ${item.phase}` : ''} · score {item.anomaly} · {item.drivers.filter((driver) => driver.z >= 2).map((driver) => `${driver.label || driver.feature} (${driver.domain}) |z| ${driver.z}`).join(' · ')}
+                </p>
+              ))}
             </div>
           )}
           </div>

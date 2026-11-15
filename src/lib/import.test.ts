@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { parseAppleHealth } from './earthDemo.ts'
 import { describe, expect, it } from 'vitest'
 import { evaluate, evaluateImported } from './engine.js'
-import { scoreForest } from './forest.ts'
+import { FOREST_CONTAMINATION, FOREST_TREES, scoreForest } from './forest.ts'
 import { parseImport, parseNumber } from './import.ts'
 import { generateMission } from './telemetry.js'
 
@@ -52,12 +52,13 @@ describe('starter files', () => {
     expect(first?.values.ataxia).toBeUndefined()
   })
 
-  it('averages reflex amplitude by muscle and bed-rest day', () => {
+  it('averages reflex torque by muscle, phase, and bed-rest day', () => {
     const result = parseImport(read('brsmfsr.csv'), 'brsmfsr.csv')
     expect(result.subjects).toEqual(['8779'])
     expect(result.days.length).toBeGreaterThan(1)
-    const withAmp = result.days.find((day) => typeof day.values.amp_med_gast === 'number')
-    expect(withAmp?.values.amp_med_gast).toEqual(expect.any(Number))
+    const pre = result.days.find((day) => day.phase === 'PRE_TEST' && typeof day.values.fsrTorque_med_gast === 'number')
+    expect(pre?.values.fsrTorque_med_gast).toBeGreaterThan(10)
+    expect(pre?.values.amp_med_gast).toBeUndefined()
   })
 
   it('averages RadLab to calendar days and does not invent mSv', () => {
@@ -192,8 +193,36 @@ describe('scores', () => {
     if (last) last.values.totBmd = 1.4
     const report = scoreForest(days, measures)
     expect(report.anomaly).not.toBeNull()
-    expect(report.drivers[0]?.feature).toBe('totBmd')
-    expect(report.drivers.some((driver) => driver.feature === 'kes0')).toBe(false)
+    expect(report.perSol.at(-1)?.drivers[0]?.feature).toBe('totBmd')
+    expect(report.perSol.at(-1)?.drivers.some((driver) => driver.feature === 'kes0')).toBe(false)
     expect(days[15]?.values.kes0).toBeUndefined()
+  })
+
+  it('trains on PRE_TEST and flags the acetaminophen half-life shift', () => {
+    const acet = parseImport(read('brsmacet.csv'), 'brsmacet.csv')
+    const days = acet.days.filter((day) => day.subject === 'C1G0001')
+    expect(days.filter((day) => day.phase === 'PRE_TEST')).toHaveLength(1)
+    expect(days.find((day) => day.sol === 56)?.values.halfLife).toBeCloseTo(372.754)
+    const report = scoreForest(days, acet.measures)
+    expect(FOREST_TREES).toBe(200)
+    expect(FOREST_CONTAMINATION).toBe(0.02)
+    expect(report.referenceKind).toBe('pre')
+    expect(report.referenceSols).toBe(1)
+    const pre = report.perSol.find((item) => item.phase === 'PRE_TEST')
+    const spike = report.perSol.find((item) => item.phase === 'IN_TEST' && item.sol === 56)
+    expect(pre?.anomaly).toBeLessThan(40)
+    expect(spike?.anomaly).toBeGreaterThanOrEqual(40)
+    expect(spike?.drivers[0]?.feature).toBe('halfLife')
+    expect(days.find((day) => day.sol === 56)?.values.halfLife).not.toBe(0)
+  })
+
+  it('flags renal clearance from the personal baseline', () => {
+    const renal = parseImport(read('brsmrf.csv'), 'brsmrf.csv')
+    const days = renal.days.filter((day) => day.subject === 'C1G0001')
+    const report = scoreForest(days, renal.measures)
+    const spike = report.perSol.find((item) => item.phase === 'IN_TEST' && item.sol === 7)
+    expect(spike?.anomaly).toBeGreaterThanOrEqual(40)
+    expect(spike?.drivers[0]?.feature).toBe('creatinineClearance')
+    expect(spike?.drivers[0]?.z).toBeGreaterThan(10)
   })
 })

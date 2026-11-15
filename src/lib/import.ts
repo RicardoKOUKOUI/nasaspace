@@ -117,12 +117,29 @@ const IMMUNE_SOL: Record<string, number> = {
   'R+5/14': 5,
 }
 
+const IMMUNE_PHASE: Record<string, string> = {
+  'L-10': 'PRE_TEST',
+  'L-2': 'PRE_TEST',
+  '28/45': 'IN_TEST',
+  '60/83': 'IN_TEST',
+  '90': 'IN_TEST',
+  'R+5/14': 'POST_TEST',
+}
+
 type Draft = {
   subject: string
   date?: string
   sol: number | null
+  phase?: string
   values: Record<string, number>
   line: number
+}
+
+function phaseRank(phase?: string): number {
+  if (!phase) return 1
+  if (/^PRE/i.test(phase)) return 0
+  if (/^POST/i.test(phase)) return 2
+  return 1
 }
 
 function clean(value: string): string {
@@ -227,12 +244,14 @@ function finalize(label: string, drafts: Draft[], measures: MeasureMeta[], notes
   const duplicates: string[] = []
   for (const [subject, list] of groups) {
     list.sort((a, b) => {
+      const rank = phaseRank(a.phase) - phaseRank(b.phase)
+      if (rank) return rank
       if (a.date && b.date && a.date !== b.date) return a.date < b.date ? -1 : 1
       return (a.sol ?? 0) - (b.sol ?? 0)
     })
     const kept = new Map<string, Draft>()
     for (const draft of list) {
-      const key = draft.date ?? `sol:${draft.sol}`
+      const key = draft.date ? `${draft.phase ?? ''}|${draft.date}` : `sol:${draft.phase ?? ''}:${draft.sol}`
       if (kept.has(key)) duplicates.push(`${subject || 'row'} ${key} (line ${draft.line})`)
       kept.set(key, draft)
     }
@@ -246,6 +265,7 @@ function finalize(label: string, drafts: Draft[], measures: MeasureMeta[], notes
         values: { ...draft.values },
       }
       if (draft.date) day.date = draft.date
+      if (draft.phase) day.phase = draft.phase
       attachClinical(day)
       days.push(day)
       index += 1
@@ -312,10 +332,12 @@ function genericTable(headers: string[], rows: string[][], label: string): Impor
   let dateIndex = -1
   let solIndex = -1
   let subjectIndex = -1
+  let phaseIndex = -1
   headers.forEach((header, index) => {
     if (DATE_HEADERS.has(header) && dateIndex < 0) dateIndex = index
     if (SOL_HEADERS.has(header) && solIndex < 0) solIndex = index
     if (SUBJECT_HEADERS.has(header) && subjectIndex < 0) subjectIndex = index
+    if ((header === 'Test_Phase' || header === 'TEST_PHASE') && phaseIndex < 0) phaseIndex = index
   })
   const columns: { index: number; mapped: Mapped }[] = []
   headers.forEach((header, index) => {
@@ -346,6 +368,8 @@ function genericTable(headers: string[], rows: string[][], label: string): Impor
       line,
     }
     if (date) draft.date = date
+    const phase = phaseIndex >= 0 ? (row[phaseIndex] ?? '') : ''
+    if (phase) draft.phase = phase
     for (const column of columns) {
       const raw = row[column.index] ?? ''
       if (!raw) continue
@@ -375,23 +399,35 @@ function reshapeImmune(headers: string[], rows: string[][], label: string): Impo
       drafts.push({
         subject,
         sol: IMMUNE_SOL[header] ?? null,
+        phase: IMMUNE_PHASE[header],
         values: { cd8Cd69: value },
         line: rowIndex + 2,
       })
     }
   })
   const notes = [
-    'CD8+ CD69+ comes from the file name. Timepoint columns were turned into sols. 28/45, 60/83, and R+5/14 keep the first day written in the header.',
+    'CD8+ CD69+ comes from the file name. Timepoint columns were turned into sols. L-10 and L-2 are the pre-test reference. 28/45, 60/83, and R+5/14 keep the first day written in the header.',
   ]
   return finalize(label, drafts, [measure], notes, [], [])
 }
+
+const REFLEX_COLUMNS = [
+  { header: 'FSR_Torque', prefix: 'fsrTorque', label: 'FSR torque', stdFloor: 0.5 },
+  { header: 'FSR_Latency', prefix: 'fsrLatency', label: 'FSR latency', stdFloor: 1 },
+  { header: 'FSR_Amp', prefix: 'fsrAmp', label: 'FSR amplitude', stdFloor: 0.01 },
+  { header: 'RMS', prefix: 'rms', label: 'RMS', stdFloor: 0.01 },
+] as const
 
 function reshapeReflex(headers: string[], rows: string[][], label: string): ImportResult {
   const subjectIndex = headers.indexOf('Subject')
   const dayIndex = headers.indexOf('BR_Day')
   const dateIndex = headers.indexOf('Date')
   const muscleIndex = headers.indexOf('Muscle')
-  const ampIndex = headers.indexOf('Amp')
+  const phaseIndex = headers.indexOf('Test_Phase')
+  const columns = REFLEX_COLUMNS.flatMap((column) => {
+    const index = headers.indexOf(column.header)
+    return index < 0 ? [] : [{ ...column, index }]
+  })
   const groups = new Map<string, Draft>()
   const measures = new Map<string, MeasureMeta>()
   rows.forEach((row, rowIndex) => {
@@ -399,23 +435,31 @@ function reshapeReflex(headers: string[], rows: string[][], label: string): Impo
     const solRaw = parseNumber(row[dayIndex] ?? '')
     if (solRaw == null) return
     const sol = Math.trunc(solRaw)
+    const phase = phaseIndex >= 0 ? (row[phaseIndex] ?? '') : ''
     const muscle = row[muscleIndex] ?? 'muscle'
-    const key = `amp_${slug(muscle)}`
-    const value = parseNumber(row[ampIndex] ?? '')
-    const id = `${subject}|${sol}`
+    const id = `${subject}|${phase}|${sol}`
     const draft = groups.get(id) ?? {
       subject,
       sol,
       date: parseDate(row[dateIndex] ?? '') ?? undefined,
+      ...(phase ? { phase } : {}),
       values: {},
       line: rowIndex + 2,
     }
-    if (value != null) {
+    for (const column of columns) {
+      const value = parseNumber(row[column.index] ?? '')
+      if (value == null) continue
+      const key = `${column.prefix}_${slug(muscle)}`
       const bucket = draft.values[`${key}__sum`]
       const count = draft.values[`${key}__n`]
       draft.values[`${key}__sum`] = (bucket ?? 0) + value
       draft.values[`${key}__n`] = (count ?? 0) + 1
-      measures.set(key, { key, label: `Amplitude ${muscle}`, domain: 'neuro', stdFloor: 0.2 })
+      measures.set(key, {
+        key,
+        label: `${column.label} ${muscle}`,
+        domain: 'neuro',
+        stdFloor: column.stdFloor,
+      })
     }
     groups.set(id, draft)
   })
@@ -429,8 +473,16 @@ function reshapeReflex(headers: string[], rows: string[][], label: string): Impo
     }
     drafts.push({ ...draft, values })
   }
-  const unassigned = headers.filter((header) => !['Subject', 'BR_Day', 'Date', 'Muscle', 'Amp', 'ID', 'Campaign', 'Trial_Type'].includes(header))
-  return finalize(label, drafts, [...measures.values()], ['Reflex trials on the same bed-rest day are averaged per muscle. Amplitude is not zero when the cell is NA.'], unassigned, [])
+  const used = new Set(['Subject', 'BR_Day', 'Date', 'Muscle', 'Test_Phase', 'ID', 'Campaign', 'Trial_Type', ...REFLEX_COLUMNS.map((column) => column.header)])
+  const unassigned = headers.filter((header) => !used.has(header))
+  return finalize(
+    label,
+    drafts,
+    [...measures.values()],
+    ['Reflex trials on the same phase and bed-rest day are averaged per muscle. FSR torque, latency, amplitude, and RMS are the numeric series. The Amp column is the stimulus setting and is not scored. A blank cell stays missing.'],
+    unassigned,
+    [],
+  )
 }
 
 function reshapeRad(headers: string[], rows: string[][], label: string): ImportResult {

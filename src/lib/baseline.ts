@@ -4,6 +4,8 @@ export const REFERENCE_SOLS = 14
 export const ROLLING_SOLS = 7
 
 export function referenceSlice(days: DayRecord[]): DayRecord[] {
+  const pre = days.filter((day) => typeof day.phase === 'string' && /^PRE/i.test(day.phase))
+  if (pre.length > 0) return pre
   return days.slice(0, Math.min(REFERENCE_SOLS, days.length))
 }
 
@@ -21,6 +23,26 @@ export function valuesOf(days: DayRecord[], key: string): number[] {
     if (typeof value === 'number' && Number.isFinite(value)) values.push(value)
   }
   return values
+}
+
+/**
+ * |z| against the person's own baseline.
+ * Uses the rolling mean and std of the previous sols when at least two exist.
+ * Otherwise uses the reference window (PRE_TEST when the file has it, else the first sols).
+ * A missing value stays null. The NASA cruise constants are not used here.
+ */
+export function personalZ(days: DayRecord[], index: number, measure: MeasureMeta): number | null {
+  const value = days[index]?.values[measure.key]
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  const rolling = rollingBaseline(days, index, measure.key)
+  if (rolling && rolling.n >= 2) {
+    return Math.abs(value - rolling.mean) / Math.max(rolling.std, measure.stdFloor)
+  }
+  const others = referenceSlice(days).filter((day) => day !== days[index])
+  const pool = others.length > 0 ? others : referenceSlice(days)
+  const stats = columnStats(valuesOf(pool, measure.key))
+  if (!stats) return null
+  return Math.abs(value - stats.mean) / Math.max(stats.std, measure.stdFloor)
 }
 
 /** |z| against the person's reference window. Missing value → null, never 0. */
