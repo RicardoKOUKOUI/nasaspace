@@ -9,7 +9,7 @@ import { CRUISE_MEASURES, cruiseRecords, scoreForest } from './lib/forest.ts'
 import { daysForSubject, parseImport } from './lib/import.ts'
 import { clearStoredImport, loadImport, saveImport } from './lib/localStore.ts'
 import { DEFAULT_METRIC, METRICS } from './lib/metrics.js'
-import { dashboardDomains, mergeDashboard } from './lib/domainView.ts'
+import { dashboardDomains, mergeDashboard, missingDomainIds } from './lib/domainView.ts'
 import { feelingModels, metricReadings } from './lib/selfReport.ts'
 import { localWatchStream } from './lib/watch.ts'
 import { STARTERS, starterForFile } from './lib/starters.ts'
@@ -272,6 +272,15 @@ export default function App() {
     const first = result.measures[0]
     if (first) setMetricId(first.key)
     saveImport(name, text).catch(() => {})
+    const subjectId = result.subjects[0]
+    if (!subjectId || size > 50 * 1024 * 1024) return
+    const missing = missingDomainIds(result.measures, daysForSubject(result.days, subjectId))
+    if (missing.length > 0) {
+      setNotice(t('import.missingColumns', {
+        name: starterForFile(name)?.label || name,
+        list: missing.map((id) => t(`nav.${id}`)).join(', '),
+      }))
+    }
   }
 
   function clearData() {

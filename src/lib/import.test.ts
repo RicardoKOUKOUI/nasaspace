@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { parseAppleHealth } from './earthDemo.ts'
 import { describe, expect, it } from 'vitest'
-import { dashboardDomains, mergeDashboard } from './domainView.ts'
+import { dashboardDomains, mergeDashboard, missingDomainIds } from './domainView.ts'
 import { evaluate, evaluateImported } from './engine.js'
 import { FOREST_CONTAMINATION, FOREST_MIN_ROWS, FOREST_SUBSAMPLE, FOREST_TREES, scoreForest } from './forest.ts'
-import { parseImport, parseNumber, headerReference } from './import.ts'
+import { daysForSubject, headerReference, parseImport, parseNumber } from './import.ts'
+import { en } from '../i18n/en.ts'
 import { SOURCE_LABEL, STARTERS } from './starters.ts'
 import { clampFeeling, metricReadings, scoreFeeling, seriesInterval } from './selfReport.ts'
 import { applyWatch, healthDecision, localWatchStream, scoreWatch } from './watch.ts'
@@ -41,7 +42,10 @@ describe('starter files', () => {
       expect(result.subjects.length, starter.id).toBeGreaterThan(0)
       expect(headerReference(text), starter.id).toMatch(/^https?:\/\//)
       expect(result.reference, starter.id).toBe(headerReference(text))
+      const missing = missingDomainIds(result.measures, daysForSubject(result.days, result.subjects[0] ?? ''))
+      expect(missing.length, starter.id).toBeGreaterThan(0)
     }
+    expect(en['import.missingColumns']).toContain('{list}')
   })
 
   it('maps spine DXA without filling ARED or percent BMD', () => {
@@ -173,7 +177,7 @@ describe('scores', () => {
     expect(storm.alerts.some((alert) => alert.id === 'spe')).toBe(true)
     expect(fatigue.score).toBeLessThan(60)
     expect(fatigue.alerts.some((alert) => alert.id === 'fatigue-cascade')).toBe(true)
-    expect(acute.score).toBeLessThan(nominal.score)
+    expect((acute.score ?? 0)).toBeLessThan(nominal.score ?? 0)
     expect(acute.alerts.some((alert) => alert.id === 'acute')).toBe(true)
   })
 
