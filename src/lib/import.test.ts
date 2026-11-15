@@ -228,24 +228,31 @@ describe('scores', () => {
     expect(spike?.drivers[0]?.z).toBeGreaterThan(10)
   })
 
-  it('trains the starter menu on later sols and leaves the short files out', () => {
-    expect(STARTERS.map((item) => item.file).sort()).toEqual([
-      'ap010-nutrition.csv',
-      'brsmacet.csv',
-      'brsmfmt.csv',
-      'brsmfsr.csv',
-      'brsmimmune-cd8.csv',
-      'brsmrf.csv',
-      'brsmvsi.csv',
-    ])
-    const acet = parseImport(read('brsmacet.csv'), 'brsmacet.csv')
-    const days = acet.days.filter((day) => day.subject === 'C1G0001')
-    const trained = trainSubject(days, acet.measures)
-    const spike = trained.later.find((item) => item.sol === 56)
-    expect(trained.referenceKind).toBe('pre')
-    expect(trained.later.every((item) => item.phase !== 'PRE_TEST')).toBe(true)
-    expect(spike?.anomaly).toBeGreaterThanOrEqual(40)
-    expect(spike?.drivers[0]?.feature).toBe('halfLife')
-    expect(spike?.drivers).toHaveLength(3)
+  it('trains the cockpit axes that have a public series and scores the later sols', () => {
+    expect(STARTERS.map((item) => item.file)).toEqual(['agbresa-cardio.csv', 'pmdata-wellness.csv'])
+    const heart = parseImport(read('agbresa-cardio.csv'), 'agbresa-cardio.csv')
+    const days = heart.days.filter((day) => day.subject === 'A')
+    expect(days.map((day) => day.sol)).toEqual([1, 30, 60])
+    expect(days[0]?.hr).toEqual(expect.any(Number))
+    expect(days[0]?.sbp).toEqual(expect.any(Number))
+    expect(days[0]?.dbp).toEqual(expect.any(Number))
+    expect(days[0]?.hrv).toBeUndefined()
+    expect(days[0]?.values.dose).toBeUndefined()
+    const trained = trainSubject(days, heart.measures)
+    expect(trained.referenceSols).toBe(1)
+    expect(trained.later.map((item) => item.sol)).toEqual([30, 60])
+    expect(trained.later.every((item) => item.drivers.length > 0 && item.drivers.length <= 3)).toBe(true)
+    expect(trained.later.every((item) => item.drivers.every((driver) => ['hr', 'sbp', 'dbp'].includes(driver.feature)))).toBe(true)
+    const wellness = parseImport(read('pmdata-wellness.csv'), 'pmdata-wellness.csv')
+    const person = wellness.days.filter((day) => day.subject === 'p01')
+    expect(person[0]?.sleep).toEqual(expect.any(Number))
+    expect(person[0]?.mood).toBeGreaterThanOrEqual(1)
+    expect(person[0]?.fatigue).toBeLessThanOrEqual(5)
+    expect(person[0]?.focus).toBeUndefined()
+    expect(person[0]?.values.readiness).toBeUndefined()
+    const behavior = trainSubject(person, wellness.measures)
+    expect(behavior.referenceSols).toBe(14)
+    expect(behavior.later.length).toBe(person.length - 14)
+    expect(behavior.later[0]?.drivers.every((driver) => ['sleep', 'mood', 'fatigue'].includes(driver.feature))).toBe(true)
   })
 })

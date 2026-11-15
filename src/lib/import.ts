@@ -54,6 +54,10 @@ const MAPPED: Record<string, Mapped> = {
   focus_1_5: { key: 'focus', label: 'Focus', domain: 'behavior', unit: '1–5', stdFloor: 0.8, min: 1, max: 5 },
   fatigue: { key: 'fatigue', label: 'Fatigue', domain: 'behavior', unit: '1–5', stdFloor: 0.8, min: 1, max: 5 },
   fatigue_1_5: { key: 'fatigue', label: 'Fatigue', domain: 'behavior', unit: '1–5', stdFloor: 0.8, min: 1, max: 5 },
+  HR_SAHC_pre_run: { key: 'hr', label: 'Heart rate', domain: 'cardio', unit: 'bpm', stdFloor: 3, min: 30, max: 220 },
+  SBP_SAHC_pre_run: { key: 'sbp', label: 'Systolic', domain: 'cardio', unit: 'mmHg', stdFloor: 4, min: 60, max: 250 },
+  DBP_SAHC_pre_run: { key: 'dbp', label: 'Diastolic', domain: 'cardio', unit: 'mmHg', stdFloor: 4, min: 30, max: 150 },
+  sleep_duration_h: { key: 'sleep', label: 'Sleep', domain: 'sleep', unit: 'h', stdFloor: 0.35, min: 0, max: 24 },
   TOT_BMD: { key: 'totBmd', label: 'Spine BMD', domain: 'muscle', unit: 'g/cm²', stdFloor: 0.01 },
   'Spine T': { key: 'spineT', label: 'Spine T', domain: 'muscle', unit: 'T-score', stdFloor: 0.1 },
   'Spine Z': { key: 'spineZ', label: 'Spine Z', domain: 'muscle', unit: 'Z-score', stdFloor: 0.1 },
@@ -100,8 +104,8 @@ for (const name of STRENGTH) {
   MAPPED[name] = { key: name.toLowerCase(), label: name, domain: 'muscle', unit: 'Nm', stdFloor: 5 }
 }
 
-const DATE_HEADERS = new Set(['SCAN_DATE', 'Date', 'date', 'timestamp'])
-const SOL_HEADERS = new Set(['BR_DAY', 'BR_Day', 'sol', 'Mission Number'])
+const DATE_HEADERS = new Set(['SCAN_DATE', 'Date', 'date', 'timestamp', 'effective_time_frame'])
+const SOL_HEADERS = new Set(['BR_DAY', 'BR_Day', 'sol', 'Mission Number', 'Day'])
 const SUBJECT_HEADERS = new Set(['SUBJECT', 'Subject', 'subject', 'Crewman', 'instrument_id'])
 const SKIP_HEADERS = new Set([
   'scenario', 'day', 'ID', 'Campaign', 'CAMPAIGN', 'TEST_PHASE', 'Test_Phase', 'Group', 'Sex',
