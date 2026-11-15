@@ -157,4 +157,6 @@ export const fr: Record<MessageKey, string> = {
   'method.sourcesTitle': 'Sources',
   'method.limitsTitle': 'Limites',
   'method.limitsBody': 'Moins de 10 lignes ou moins de 2 colonnes numériques : pas de score IA. Une page sans colonne pour ce domaine reste vide et le dit. La croisière de démonstration est simulée. Les jeux de départ sont des relevés de vol spatial, d’analogue au sol ou de montre terrestre, et chacun est étiqueté comme tel.',
+  'data.clear': 'Effacer mes données',
+  'data.cleared': 'Données importées effacées de cet appareil.',
 }

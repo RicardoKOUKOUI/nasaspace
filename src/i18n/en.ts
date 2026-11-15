@@ -155,6 +155,8 @@ export const en = {
   'method.sourcesTitle': 'Sources',
   'method.limitsTitle': 'Limits',
   'method.limitsBody': 'Under 10 rows or under 2 numeric columns there is no AI score. A page with no column for that domain stays empty and says so. The demonstration cruise is simulated. The starter tables are spaceflight, bed-rest analogue, or terrestrial wearable records, and each one is labeled as such.',
+  'data.clear': 'Clear my data',
+  'data.cleared': 'Imported data cleared from this device.',
 } as const
 
 export type MessageKey = keyof typeof en

@@ -7,6 +7,7 @@ import { toCsv } from './lib/csv.js'
 import { evaluate, evaluateImported } from './lib/engine.js'
 import { CRUISE_MEASURES, cruiseRecords, scoreForest } from './lib/forest.ts'
 import { daysForSubject, parseImport } from './lib/import.ts'
+import { clearStoredImport, loadImport, saveImport } from './lib/localStore.ts'
 import { DEFAULT_METRIC, METRICS } from './lib/metrics.js'
 import { dashboardDomains, mergeDashboard } from './lib/domainView.ts'
 import { feelingModels, metricReadings } from './lib/selfReport.ts'
@@ -134,6 +135,25 @@ export default function App() {
 
   useEffect(() => {
     let cancel = false
+    loadImport()
+      .then((saved) => {
+        if (cancel || !saved) return
+        const result = parseImport(saved.text, saved.name)
+        if (!result.ok || result.days.length === 0) return
+        setBundle(result)
+        setSubject(result.subjects[0] ?? '')
+        setMode('imported')
+        const first = result.measures[0]
+        if (first) setMetricId(first.key)
+      })
+      .catch(() => {})
+    return () => {
+      cancel = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancel = false
     async function loadOverview() {
       const views = []
       const picked = new Map()
@@ -251,6 +271,25 @@ export default function App() {
     setMode('imported')
     const first = result.measures[0]
     if (first) setMetricId(first.key)
+    saveImport(name, text).catch(() => {})
+  }
+
+  function clearData() {
+    clearStoredImport()
+      .catch(() => {})
+      .finally(() => {
+        try {
+          localStorage.removeItem('astropulse-done')
+        } catch {
+          /* private mode */
+        }
+        setDone({})
+        setBundle(null)
+        setSubject('')
+        setImportSelf({})
+        setMode('demo')
+        setNotice(t('data.cleared'))
+      })
   }
 
   function onFile(file) {
@@ -453,6 +492,7 @@ export default function App() {
           </div>
           <div className="import-bar">
             <button className="ghost" onClick={() => fileRef.current?.click()}>{t('record.import')}</button>
+            <button className="ghost" type="button" onClick={clearData}>{t('data.clear')}</button>
             <a className="ghost" href="/exemple-import.csv" download>{t('record.example')}</a>
             <select aria-label={t('record.starter')} defaultValue="" onChange={(event) => { loadStarter(event.target.value); event.target.value = '' }}>
               <option value="">{t('record.starter')}</option>
