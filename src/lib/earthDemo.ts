@@ -30,7 +30,9 @@ function hoursBetween(start: string, end: string): number | null {
   return (b - a) / 3_600_000
 }
 
-function finish(byDate: Map<string, { hr: number[]; hrv: number[]; sleep: number }>, notes: string[]): EarthDraft {
+type Bucket = { hr: number[]; hrv: number[]; sleep: number[] }
+
+function finish(byDate: Map<string, Bucket>, notes: string[]): EarthDraft {
   const dates = [...byDate.keys()].sort()
   const days: DayRecord[] = []
   dates.forEach((date, index) => {
@@ -63,7 +65,7 @@ function finish(byDate: Map<string, { hr: number[]; hrv: number[]; sleep: number
 
 export function parseAppleHealth(xml: string): EarthDraft {
   const notes = ['Earth demo from Apple Health. Only heart rate, HRV, and sleep are read. Other domains stay unmeasured.']
-  const buckets = new Map<string, { hr: number[]; hrv: number[]; sleep: number }>()
+  const buckets = new Map<string, Bucket>()
   const ensure = (date: string) => {
     const found = buckets.get(date)
     if (found) return found
@@ -101,7 +103,7 @@ export function parseGoogleFit(data: unknown): EarthDraft | null {
   const record = data as { heartRate?: FitPoint[]; hrv?: FitPoint[]; sleepHours?: FitPoint[] }
   if (!record.heartRate && !record.hrv && !record.sleepHours) return null
   const notes = ['Earth demo from a Google Fit summary. Only heart rate, HRV, and sleep hours are read.']
-  const buckets = new Map<string, { hr: number[]; hrv: number[]; sleep: number }>()
+  const buckets = new Map<string, Bucket>()
   const ensure = (date: string) => {
     const found = buckets.get(date)
     if (found) return found

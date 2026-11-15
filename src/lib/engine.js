@@ -271,6 +271,7 @@ export function evaluate(days, self = {}, options) {
   const anomaly = clamp(Math.round(rms * 22), 0, 100)
 
   return {
+    unmeasured: false,
     score,
     status,
     anomaly,

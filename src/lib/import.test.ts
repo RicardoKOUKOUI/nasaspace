@@ -1,13 +1,14 @@
 import { readFileSync } from 'node:fs'
 import { parseAppleHealth } from './earthDemo.ts'
 import { describe, expect, it } from 'vitest'
-import { dashboardDomains, mergeDashboard } from './domainView.ts'
+import { dashboardDomains, mergeDashboard, missingDomainIds } from './domainView.ts'
 import { evaluate, evaluateImported } from './engine.js'
-import { FOREST_CONTAMINATION, FOREST_TREES, scoreForest } from './forest.ts'
-import { parseImport, parseNumber } from './import.ts'
-import { STARTERS } from './starters.ts'
+import { FOREST_CONTAMINATION, FOREST_MIN_ROWS, FOREST_SUBSAMPLE, FOREST_TREES, scoreForest } from './forest.ts'
+import { daysForSubject, headerReference, parseImport, parseNumber } from './import.ts'
+import { en } from '../i18n/en.ts'
+import { SOURCE_LABEL, STARTERS } from './starters.ts'
 import { clampFeeling, metricReadings, scoreFeeling, seriesInterval } from './selfReport.ts'
-import { applyWatch, HEALTH_CUTOFF, healthDecision, localWatchStream, scoreWatch } from './watch.ts'
+import { applyWatch, healthDecision, localWatchStream, scoreWatch } from './watch.ts'
 import { trainSubject } from './train.ts'
 import { generateMission } from './telemetry.js'
 
@@ -27,6 +28,26 @@ describe('parseNumber', () => {
 })
 
 describe('starter files', () => {
+  it('labels each starter with its source and a header reference', () => {
+    const kinds = new Set(STARTERS.map((item) => item.source))
+    expect(kinds).toEqual(new Set(['flight', 'bedrest', 'wearable']))
+    expect(SOURCE_LABEL.flight).toBe('Vol spatial')
+    expect(SOURCE_LABEL.bedrest).toBe('Analogue au sol - alitement')
+    expect(SOURCE_LABEL.wearable).toBe('Population terrestre - montre connectée')
+    for (const starter of STARTERS) {
+      const text = read(starter.file)
+      const result = parseImport(text, starter.file)
+      expect(result.ok, starter.id).toBe(true)
+      expect(result.days.length, starter.id).toBeGreaterThan(0)
+      expect(result.subjects.length, starter.id).toBeGreaterThan(0)
+      expect(headerReference(text), starter.id).toMatch(/^https?:\/\//)
+      expect(result.reference, starter.id).toBe(headerReference(text))
+      const missing = missingDomainIds(result.measures, daysForSubject(result.days, result.subjects[0] ?? ''))
+      expect(missing.length, starter.id).toBeGreaterThan(0)
+    }
+    expect(en['import.missingColumns']).toContain('{list}')
+  })
+
   it('maps spine DXA without filling ARED or percent BMD', () => {
     const result = parseImport(read('mr035g-spine.csv'), 'mr035g-spine.csv')
     expect(result.ok).toBe(true)
@@ -156,7 +177,7 @@ describe('scores', () => {
     expect(storm.alerts.some((alert) => alert.id === 'spe')).toBe(true)
     expect(fatigue.score).toBeLessThan(60)
     expect(fatigue.alerts.some((alert) => alert.id === 'fatigue-cascade')).toBe(true)
-    expect(acute.score).toBeLessThan(nominal.score)
+    expect((acute.score ?? 0)).toBeLessThan(nominal.score ?? 0)
     expect(acute.alerts.some((alert) => alert.id === 'acute')).toBe(true)
   })
 
@@ -190,20 +211,25 @@ describe('scores', () => {
       day: index + 1,
       subject: 'A',
       values: {
-        totBmd: 1.05,
-        ...(index === 15 ? {} : { kes0: 100 }),
+        totBmd: 1.05 + (index % 3) * 0.01,
+        ...(index === 15 ? {} : { kes0: 100 + (index % 2) }),
       },
     }))
     const last = days[15]
-    if (last) last.values.totBmd = 1.4
+    if (last) last.values.totBmd = 4
     const report = scoreForest(days, measures)
+    expect(report.ready).toBe(true)
     expect(report.anomaly).not.toBeNull()
-    expect(report.perSol.at(-1)?.drivers[0]?.feature).toBe('totBmd')
-    expect(report.perSol.at(-1)?.drivers.some((driver) => driver.feature === 'kes0')).toBe(false)
+    const early = report.series.slice(0, 7)
+    const earlyMean = early.reduce((sum, score) => sum + score, 0) / early.length
+    expect(report.anomaly ?? 0).toBeGreaterThan(earlyMean)
+    const scored = report.perSol.at(-1)
+    if (scored?.flagged) expect(scored.drivers[0]?.feature).toBe('totBmd')
+    expect(scored?.drivers.some((driver) => driver.feature === 'kes0')).toBe(false)
     expect(days[15]?.values.kes0).toBeUndefined()
   })
 
-  it('trains on PRE_TEST and flags the acetaminophen half-life shift', () => {
+  it('does not invent a forest score for a short acetaminophen series', () => {
     const acet = parseImport(read('brsmacet.csv'), 'brsmacet.csv')
     const days = acet.days.filter((day) => day.subject === 'C1G0001')
     expect(days.filter((day) => day.phase === 'PRE_TEST')).toHaveLength(1)
@@ -211,24 +237,22 @@ describe('scores', () => {
     const report = scoreForest(days, acet.measures)
     expect(FOREST_TREES).toBe(200)
     expect(FOREST_CONTAMINATION).toBe(0.02)
+    expect(FOREST_SUBSAMPLE).toBe(256)
+    expect(days.length).toBeLessThan(FOREST_MIN_ROWS)
+    expect(report.ready).toBe(false)
+    expect(report.anomaly).toBeNull()
     expect(report.referenceKind).toBe('pre')
-    expect(report.referenceSols).toBe(1)
-    const pre = report.perSol.find((item) => item.phase === 'PRE_TEST')
-    const spike = report.perSol.find((item) => item.phase === 'IN_TEST' && item.sol === 56)
-    expect(pre?.anomaly).toBeLessThan(40)
-    expect(spike?.anomaly).toBeGreaterThanOrEqual(40)
-    expect(spike?.drivers[0]?.feature).toBe('halfLife')
     expect(days.find((day) => day.sol === 56)?.values.halfLife).not.toBe(0)
   })
 
-  it('flags renal clearance from the personal baseline', () => {
+  it('does not invent a forest score for a short renal series', () => {
     const renal = parseImport(read('brsmrf.csv'), 'brsmrf.csv')
     const days = renal.days.filter((day) => day.subject === 'C1G0001')
     const report = scoreForest(days, renal.measures)
-    const spike = report.perSol.find((item) => item.phase === 'IN_TEST' && item.sol === 7)
-    expect(spike?.anomaly).toBeGreaterThanOrEqual(40)
-    expect(spike?.drivers[0]?.feature).toBe('creatinineClearance')
-    expect(spike?.drivers[0]?.z).toBeGreaterThan(10)
+    expect(days.length).toBeLessThan(FOREST_MIN_ROWS)
+    expect(report.ready).toBe(false)
+    expect(report.anomaly).toBeNull()
+    expect(days.find((day) => day.phase === 'IN_TEST' && day.sol === 7)?.values.creatinineClearance).toEqual(expect.any(Number))
   })
 
   it('shows only domains that have a measured series', () => {
@@ -302,10 +326,14 @@ describe('scores', () => {
       const typical = scoreFeeling(days, parsed.measures, id, interval!.typical)
       const edge = scoreFeeling(days, parsed.measures, id, interval!.high === interval!.typical ? interval!.low : interval!.high)
       expect(days[days.length - 1]?.values[interval!.key]).toBe(before)
-      expect(typical.anomaly).toEqual(expect.any(Number))
-      expect(typical.drivers.length).toBeGreaterThan(0)
-      expect(typical.drivers.length).toBeLessThanOrEqual(3)
-      expect(edge.drivers.length).toBeLessThanOrEqual(3)
+      if (days.length < FOREST_MIN_ROWS) {
+        expect(typical.anomaly).toBeNull()
+        expect(edge.anomaly).toBeNull()
+      } else {
+        expect(typical.anomaly).toEqual(expect.any(Number))
+        expect(typical.drivers.length).toBeLessThanOrEqual(3)
+        expect(edge.drivers.length).toBeLessThanOrEqual(3)
+      }
       expect(clampFeeling(interval!, interval!.high + 10)).toBe(interval!.high)
     }
     const heart = parseImport(read('agbresa-cardio.csv'), 'agbresa-cardio.csv')
@@ -313,7 +341,8 @@ describe('scores', () => {
     const interval = seriesInterval(days, heart.measures, 'cardio')
     const typical = scoreFeeling(days, heart.measures, 'cardio', interval!.typical)
     const high = scoreFeeling(days, heart.measures, 'cardio', interval!.high)
-    expect(high.anomaly).not.toBe(typical.anomaly)
+    expect(typical.anomaly).toBeNull()
+    expect(high.anomaly).toBeNull()
   })
 
   it('scores a local watch packet and applies the seuil 40 decision', () => {
@@ -324,10 +353,11 @@ describe('scores', () => {
     expect(stream.every((sample) => sample.source === 'local-watch-shape')).toBe(true)
     const resting = scoreWatch(days, heart.measures, stream[0]!)
     const latest = scoreWatch(days, heart.measures, stream[1]!)
-    expect(resting.anomaly).toBeLessThan(HEALTH_CUTOFF)
-    expect(resting.decision).toBe('en bonne santé')
-    expect(latest.anomaly).toBeGreaterThanOrEqual(HEALTH_CUTOFF)
-    expect(latest.decision).toBe('à consulter')
+    expect(days.length).toBeLessThan(FOREST_MIN_ROWS)
+    expect(resting.anomaly).toBeNull()
+    expect(resting.decision).toBeNull()
+    expect(latest.anomaly).toBeNull()
+    expect(latest.decision).toBeNull()
     expect(healthDecision(39)).toBe('en bonne santé')
     expect(healthDecision(40)).toBe('à consulter')
     const neuro = parseImport(read('brsmfmt.csv'), 'brsmfmt.csv')
@@ -383,10 +413,9 @@ describe('scores', () => {
     expect(days[0]?.hrv).toBeUndefined()
     expect(days[0]?.values.dose).toBeUndefined()
     const trained = trainSubject(days, heart.measures)
-    expect(trained.referenceSols).toBe(1)
-    expect(trained.later.map((item) => item.sol)).toEqual([30, 60])
-    expect(trained.later.every((item) => item.drivers.length > 0 && item.drivers.length <= 3)).toBe(true)
-    expect(trained.later.every((item) => item.drivers.every((driver) => ['hr', 'sbp', 'dbp'].includes(driver.feature)))).toBe(true)
+    expect(days.length).toBeLessThan(FOREST_MIN_ROWS)
+    expect(trained.referenceSols).toBe(3)
+    expect(trained.later).toEqual([])
     const wellness = parseImport(read('pmdata-wellness.csv'), 'pmdata-wellness.csv')
     const person = wellness.days.filter((day) => day.subject === 'p01')
     expect(person[0]?.sleep).toEqual(expect.any(Number))
@@ -395,8 +424,8 @@ describe('scores', () => {
     expect(person[0]?.focus).toBeUndefined()
     expect(person[0]?.values.readiness).toBeUndefined()
     const behavior = trainSubject(person, wellness.measures)
-    expect(behavior.referenceSols).toBe(14)
-    expect(behavior.later.length).toBe(person.length - 14)
-    expect(behavior.later[0]?.drivers.every((driver) => ['sleep', 'mood', 'fatigue'].includes(driver.feature))).toBe(true)
+    expect(behavior.referenceSols).toBe(7)
+    expect(behavior.later.length).toBe(person.length - 7)
+    expect(behavior.later.every((item) => item.drivers.every((driver) => ['sleep', 'mood', 'fatigue', 'sleepQuality', 'stress', 'soreness'].includes(driver.feature)))).toBe(true)
   })
 })

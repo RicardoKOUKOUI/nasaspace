@@ -84,6 +84,11 @@ export function mergeDashboard(views: DashboardDomain[][]): DashboardDomain[] {
   })
 }
 
+/** Categories with no number in this file. The screen names them instead of leaving a blank. */
+export function missingDomainIds(measures: MeasureMeta[], days: DayRecord[]): Array<(typeof ORDER)[number]> {
+  return dashboardDomains(measures, days).filter((row) => row.detail === '—').map((row) => row.id)
+}
+
 function latestNumber(days: DayRecord[], key: string): number | null {
   for (let index = days.length - 1; index >= 0; index -= 1) {
     const value = days[index]?.values[key]

@@ -64,9 +64,10 @@ export function scoreWatch(
 ): { anomaly: number | null; drivers: ForestDriver[]; decision: HealthDecision | null } {
   const report = scoreForest(applyWatch(days, payload), measures)
   if (report.anomaly == null) return { anomaly: null, drivers: [], decision: null }
+  const flagged = report.perSol.at(-1)?.flagged === true
   return {
     anomaly: report.anomaly,
     drivers: report.drivers,
-    decision: healthDecision(report.anomaly),
+    decision: flagged ? 'à consulter' : 'en bonne santé',
   }
 }

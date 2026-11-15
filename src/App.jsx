@@ -1,30 +1,33 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Chart } from './components/Chart.jsx'
 import { DiagnosticPage } from './components/DiagnosticPage.jsx'
+import { MethodPage } from './components/MethodPage.jsx'
 import { columnStats, referenceSlice, rollingBaseline, valuesOf } from './lib/baseline.ts'
 import { toCsv } from './lib/csv.js'
 import { evaluate, evaluateImported } from './lib/engine.js'
-import { scoreForest } from './lib/forest.ts'
+import { CRUISE_MEASURES, cruiseRecords, scoreForest } from './lib/forest.ts'
 import { daysForSubject, parseImport } from './lib/import.ts'
+import { clearStoredImport, loadImport, saveImport } from './lib/localStore.ts'
 import { DEFAULT_METRIC, METRICS } from './lib/metrics.js'
-import { dashboardDomains, mergeDashboard } from './lib/domainView.ts'
+import { dashboardDomains, mergeDashboard, missingDomainIds } from './lib/domainView.ts'
 import { feelingModels, metricReadings } from './lib/selfReport.ts'
-import { HEALTH_CUTOFF_NAME, localWatchStream, scoreWatch } from './lib/watch.ts'
-import { STARTERS } from './lib/starters.ts'
+import { localWatchStream } from './lib/watch.ts'
+import { STARTERS, starterForFile } from './lib/starters.ts'
 import { COMMS_DELAY_MIN, generateMission, SCENARIOS } from './lib/telemetry.js'
-import modelReport from '../data/model_scores.json'
+import { setLocale, t, useLocale } from './i18n/index.ts'
 
 const PALETTE = ['#79e4ff', '#7dcec8', '#f0c14a', '#c3b4ff', '#ffb086', '#9fd0ff', '#ff8fa3', '#5ee0a8']
 const METRIC_SECTIONS = new Set(['cardio', 'neuro', 'immune', 'behavior', 'nutrition', 'renal'])
 const NAV = [
-  { id: 'decision', label: 'Décision' },
-  { id: 'diagnostic', label: 'Diagnostic' },
-  { id: 'cardio', label: 'Cardiovasculaire' },
-  { id: 'neuro', label: 'Neurologie' },
-  { id: 'immune', label: 'Immunité' },
-  { id: 'behavior', label: 'Psychologie' },
-  { id: 'nutrition', label: 'Nutrition' },
-  { id: 'renal', label: 'Santé rénale' },
+  { id: 'decision', label: 'nav.decision' },
+  { id: 'diagnostic', label: 'nav.diagnostic' },
+  { id: 'cardio', label: 'nav.cardio' },
+  { id: 'neuro', label: 'nav.neuro' },
+  { id: 'immune', label: 'nav.immune' },
+  { id: 'behavior', label: 'nav.behavior' },
+  { id: 'nutrition', label: 'nav.nutrition' },
+  { id: 'renal', label: 'nav.renal' },
+  { id: 'method', label: 'nav.method' },
 ]
 
 function loadDone() {
@@ -54,6 +57,7 @@ function viewOf(measure, index) {
 }
 
 export default function App() {
+  const locale = useLocale()
   const [scenario, setScenario] = useState('nominal')
   const [metricId, setMetricId] = useState('hrv')
   const [overrides, setOverrides] = useState({})
@@ -106,12 +110,18 @@ export default function App() {
     [showingDemo, importedDays, self.mood, self.focus, self.fatigue],
   )
   const report = showingDemo ? demoReport : importReport
-  const demoForest = modelReport.scenarios[scenario]
+  const nominalRecords = useMemo(() => cruiseRecords(generateMission('nominal').days), [])
+  const demoRecords = useMemo(() => cruiseRecords(mission.days), [mission])
+  const demoForest = useMemo(
+    () => scoreForest(demoRecords, CRUISE_MEASURES, { trainOn: nominalRecords }),
+    [demoRecords, nominalRecords],
+  )
   const importForest = useMemo(
     () => (showingDemo || !bundle ? null : scoreForest(importedDays, bundle.measures)),
     [showingDemo, importedDays, bundle],
   )
   const forest = showingDemo ? demoForest : importForest
+  const datasetLabel = showingDemo ? 'Nominal' : (bundle?.label || subject || 'import')
   const metrics = showingDemo
     ? METRICS.filter((item) => !['dose', 'aredMin', 'bmd', 'crp'].includes(item.id))
     : (bundle?.measures ?? []).map(viewOf)
@@ -121,6 +131,25 @@ export default function App() {
   useEffect(() => {
     const id = setInterval(() => setClock((value) => value + 1), 1000)
     return () => clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    let cancel = false
+    loadImport()
+      .then((saved) => {
+        if (cancel || !saved) return
+        const result = parseImport(saved.text, saved.name)
+        if (!result.ok || result.days.length === 0) return
+        setBundle(result)
+        setSubject(result.subjects[0] ?? '')
+        setMode('imported')
+        const first = result.measures[0]
+        if (first) setMetricId(first.key)
+      })
+      .catch(() => {})
+    return () => {
+      cancel = true
+    }
   }, [])
 
   useEffect(() => {
@@ -227,13 +256,13 @@ export default function App() {
 
   function acceptText(text, name, size = 0) {
     if (size > 50 * 1024 * 1024) {
-      setNotice('File is over 50 MB. An Apple Health export is read only for heart rate, HRV, and sleep.')
+      setNotice(t('import.tooBig'))
     } else {
       setNotice('')
     }
     const result = parseImport(text, name)
     if (!result.ok || result.days.length === 0) {
-      setNotice(result.errors[0] || 'Nothing to import. Demo stays on screen.')
+      setNotice(result.errors[0] || t('import.empty'))
       return
     }
     setBundle(result)
@@ -242,6 +271,34 @@ export default function App() {
     setMode('imported')
     const first = result.measures[0]
     if (first) setMetricId(first.key)
+    saveImport(name, text).catch(() => {})
+    const subjectId = result.subjects[0]
+    if (!subjectId || size > 50 * 1024 * 1024) return
+    const missing = missingDomainIds(result.measures, daysForSubject(result.days, subjectId))
+    if (missing.length > 0) {
+      setNotice(t('import.missingColumns', {
+        name: starterForFile(name)?.label || name,
+        list: missing.map((id) => t(`nav.${id}`)).join(', '),
+      }))
+    }
+  }
+
+  function clearData() {
+    clearStoredImport()
+      .catch(() => {})
+      .finally(() => {
+        try {
+          localStorage.removeItem('astropulse-done')
+        } catch {
+          /* private mode */
+        }
+        setDone({})
+        setBundle(null)
+        setSubject('')
+        setImportSelf({})
+        setMode('demo')
+        setNotice(t('data.cleared'))
+      })
   }
 
   function onFile(file) {
@@ -256,7 +313,7 @@ export default function App() {
     if (!starter) return
     const response = await fetch(`/starters/${starter.file}`)
     if (!response.ok) {
-      setNotice('That starter file is not in this build.')
+      setNotice(t('import.missingFile'))
       return
     }
     acceptText(await response.text(), starter.file, 0)
@@ -267,9 +324,9 @@ export default function App() {
   const ss = String(clock % 60).padStart(2, '0')
   const refStats = !showingDemo && metric ? columnStats(valuesOf(referenceSlice(days), metric.id)) : null
   const roll = !showingDemo && metric ? rollingBaseline(days, days.length - 1, metric.id) : null
-  const flaggedSols = !showingDemo && forest?.perSol
+  const flaggedSols = forest?.perSol
     ? forest.perSol
-        .filter((item) => item.anomaly >= 40 && item.drivers.some((driver) => driver.z >= 2))
+        .filter((item) => item.flagged)
         .slice()
         .sort((a, b) => b.anomaly - a.anomaly)
         .slice(0, 3)
@@ -285,10 +342,6 @@ export default function App() {
     [cardioModel],
   )
   const watchPayload = watchStream[watchTick % Math.max(watchStream.length, 1)] ?? null
-  const watchScore = useMemo(
-    () => (cardioModel && watchPayload ? scoreWatch(cardioModel.days, cardioModel.measures, watchPayload) : null),
-    [cardioModel, watchPayload],
-  )
   useEffect(() => {
     if (watchStream.length < 2) return undefined
     const id = setInterval(() => setWatchTick((value) => value + 1), 5000)
@@ -324,7 +377,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <nav className="side-nav" aria-label="Sections">
+      <nav className="side-nav" aria-label={t('aria.sections')}>
         {NAV.map((item) => (
           <button
             key={item.id}
@@ -333,7 +386,7 @@ export default function App() {
             aria-current={section === item.id ? 'page' : undefined}
             onClick={() => setSection(item.id)}
           >
-            {item.label}
+            {t(item.label)}
           </button>
         ))}
       </nav>
@@ -346,14 +399,18 @@ export default function App() {
           </div>
           <div>
             <h1>ASTRO-PULSE</h1>
-            <p>{showingDemo ? `OFFLINE HEALTH OS · ${mission.vehicle.toUpperCase()}` : `IMPORTED · ${(bundle?.label || 'FILE').toUpperCase()}`}</p>
+            <p>{showingDemo ? t('brand.demo') : t('brand.imported', { name: (bundle?.label || 'FILE').toUpperCase() })}</p>
           </div>
         </div>
         <div className="clock">
-          <strong>SOL {today.sol} · {hh}:{mm}:{ss}</strong>
-          <p>EARTH LINK DELAY {COMMS_DELAY_MIN} MIN · LOCAL ONLY</p>
+          <strong>{t('clock.sol', { sol: today.sol, time: `${hh}:${mm}:${ss}` })}</strong>
+          <p>{t('clock.delay', { min: COMMS_DELAY_MIN })}</p>
         </div>
-        <div className="scenarios" role="radiogroup" aria-label="Demo scenario">
+        <div className="lang-toggle" role="group" aria-label={t('aria.language')}>
+          <button type="button" className={locale === 'en' ? 'on' : ''} aria-pressed={locale === 'en'} onClick={() => setLocale('en')}>EN</button>
+          <button type="button" className={locale === 'fr' ? 'on' : ''} aria-pressed={locale === 'fr'} onClick={() => setLocale('fr')}>FR</button>
+        </div>
+        <div className="scenarios" role="radiogroup" aria-label={t('aria.scenarios')}>
           {SCENARIOS.map((item) => (
             <button
               key={item.id}
@@ -363,8 +420,8 @@ export default function App() {
               aria-checked={showingDemo && item.id === scenario}
               onClick={() => returnToDemo(item.id)}
             >
-              <b>{item.key} {item.label}</b>
-              <small>{item.hint}</small>
+              <b>{item.key} {t(`scenario.${item.id}`)}</b>
+              <small>{t(`scenario.${item.id}Hint`)}</small>
             </button>
           ))}
         </div>
@@ -372,49 +429,57 @@ export default function App() {
 
       <main className={section === 'decision' ? 'workspace resettle' : 'workspace metric-page resettle'} key={section}>
         {section === 'diagnostic' && <DiagnosticPage />}
+        {section === 'method' && <MethodPage />}
         {METRIC_SECTIONS.has(section) && (
-          <section className="panel metric-sheet" aria-label={pageModel?.label || section}>
-            <h2>{pageModel?.label}</h2>
-            <p className="hint">{section === 'cardio' ? 'Montre · HR, SBP, DBP. Aucun appareil Bluetooth n’est appairé.' : 'Dernière ligne d’entraînement.'}</p>
+          <section className="panel metric-sheet" aria-label={t(`nav.${section}`)}>
+            <h2>{t(`nav.${section}`)}</h2>
+            <p className="hint">{section === 'cardio' ? t('metric.watch') : t('metric.latest')}</p>
+            {pageReadings.length === 0 ? (
+              <p>{t('page.missing', { page: t(`nav.${section}`) })}</p>
+            ) : (
             <div className="reading-grid">
               {pageReadings.map((reading) => (
                 <article className="reading" key={reading.key}>
                   <span>{reading.label}</span>
                   <strong>{formatMeasure(reading.value)}{reading.unit ? <small> {reading.unit}</small> : null}</strong>
-                  <p>Bas {formatMeasure(reading.low)} · Typique {formatMeasure(reading.typical)} · Haut {formatMeasure(reading.high)}{reading.unit ? ` ${reading.unit}` : ''}</p>
+                  <p>{t('metric.range', { low: formatMeasure(reading.low), typical: formatMeasure(reading.typical), high: formatMeasure(reading.high), unit: reading.unit ? ` ${reading.unit}` : '' })}</p>
                 </article>
               ))}
             </div>
+            )}
           </section>
         )}
         {section === 'decision' && (
         <>
-        <section className="panel" aria-label="Decision">
-          <h2>Décision</h2>
-          {watchPayload && watchScore?.anomaly != null ? (
+        <section className="panel" aria-label={t('aria.decision')}>
+          <h2>{t('nav.decision')}</h2>
+          {forest?.ready && forest.anomaly != null ? (
             <div className="score-block">
-              <em className={watchScore.decision === 'à consulter' ? 'status-risk' : 'status-ready'}>{watchScore.anomaly}%</em>
-              <div className={watchScore.decision === 'à consulter' ? 'status-risk' : 'status-ready'} style={{ fontFamily: 'Barlow Condensed, sans-serif', letterSpacing: '0.16em', marginTop: 4 }}>
-                {watchScore.decision}
+              <em className={forest.perSol.at(-1)?.flagged ? 'status-risk' : 'status-ready'}>{forest.anomaly}%</em>
+              <div className={forest.perSol.at(-1)?.flagged ? 'status-risk' : 'status-ready'} style={{ fontFamily: 'Barlow Condensed, sans-serif', letterSpacing: '0.16em', marginTop: 4 }}>
+                {forest.perSol.at(-1)?.flagged ? t('decision.consult') : t('decision.healthy')}
               </div>
               <p>
-                {HEALTH_CUTOFF_NAME}. en bonne santé sous 40, à consulter à partir de 40.
+                {t('decision.threshold', { threshold: Number(forest.threshold).toFixed(1) })}
               </p>
-              <p className="hint">
-                Signal local en forme de montre : HR {watchPayload.hr} bpm · SBP {watchPayload.sbp} mmHg · DBP {watchPayload.dbp} mmHg. Aucun appareil Bluetooth n’est appairé.
-              </p>
-              {watchScore.drivers.length > 0 && (
-                <p className="hint">{watchScore.drivers.map((driver) => `${driver.label || driver.feature} ${driver.z}`).join(' · ')}</p>
+              <p className="hint">{t('forest.provenance', { n: forest.referenceSols, dataset: datasetLabel })}</p>
+              {forest.drivers.length > 0 && (
+                <p className="hint">{forest.drivers.map((driver) => `${driver.label || driver.feature} ${driver.z}`).join(' · ')}</p>
               )}
             </div>
           ) : (
-            <p className="hint">Signal local en cours.</p>
+            <p>{t('forest.insufficient')}</p>
+          )}
+          {watchPayload && (
+            <p className="hint">
+              {t('watch.local', { hr: watchPayload.hr, sbp: watchPayload.sbp, dbp: watchPayload.dbp })}
+            </p>
           )}
         </section>
 
         <section
           className={dragOver ? 'panel trends drag' : 'panel trends'}
-          aria-label="Record"
+          aria-label={t('aria.record')}
           onDragOver={(event) => {
             event.preventDefault()
             setDragOver(true)
@@ -429,16 +494,17 @@ export default function App() {
           <div className="section-head">
             <h2 style={{ margin: 0 }}>
               {showingDemo
-                ? `30-sol record · SOL ${mission.days[0].sol}–${today.sol}`
-                : `${days.length} rows · SOL ${days[0].sol}–${today.sol}`}
+                ? t('record.demo', { from: mission.days[0].sol, to: today.sol })
+                : t('record.rows', { n: days.length, from: days[0].sol, to: today.sol })}
             </h2>
-            <button className="ghost" onClick={download}>Download CSV</button>
+            <button className="ghost" onClick={download}>{t('record.download')}</button>
           </div>
           <div className="import-bar">
-            <button className="ghost" onClick={() => fileRef.current?.click()}>Import</button>
-            <a className="ghost" href="/exemple-import.csv" download>Example CSV</a>
-            <select aria-label="Starter dataset" defaultValue="" onChange={(event) => { loadStarter(event.target.value); event.target.value = '' }}>
-              <option value="">Starter dataset</option>
+            <button className="ghost" onClick={() => fileRef.current?.click()}>{t('record.import')}</button>
+            <button className="ghost" type="button" onClick={clearData}>{t('data.clear')}</button>
+            <a className="ghost" href="/exemple-import.csv" download>{t('record.example')}</a>
+            <select aria-label={t('record.starter')} defaultValue="" onChange={(event) => { loadStarter(event.target.value); event.target.value = '' }}>
+              <option value="">{t('record.starter')}</option>
               {STARTERS.map((item) => (
                 <option key={item.id} value={item.id}>{item.label}</option>
               ))}
@@ -454,10 +520,26 @@ export default function App() {
               }}
             />
           </div>
+          {showingDemo ? (
+            <p className="import-note">{t('record.simulation')}</p>
+          ) : bundle && (
+            <p className="import-note">
+              {starterForFile(bundle.label) && (
+                <strong className="source-badge">{t(`source.${starterForFile(bundle.label).source}`)}</strong>
+              )}
+              {t('record.counts', { rows: bundle.days.length, subjects: bundle.subjects.length })}
+              {bundle.reference && (
+                <>
+                  {' · '}
+                  <a href={bundle.reference}>{bundle.reference}</a>
+                </>
+              )}
+            </p>
+          )}
           {!showingDemo && bundle && bundle.subjects.length > 1 && (
             <label className="import-note">
-              Subject
-              <select aria-label="Subject" value={subject} onChange={(event) => setSubject(event.target.value)}>
+              {t('record.subject')}
+              <select aria-label={t('aria.subject')} value={subject} onChange={(event) => setSubject(event.target.value)}>
                 {bundle.subjects.map((item) => (
                   <option key={item} value={item}>{item}</option>
                 ))}
@@ -467,7 +549,7 @@ export default function App() {
           {notice && <p className="import-note">{notice}</p>}
           {!showingDemo && bundle?.notes?.[0] && <p className="import-note">{bundle.notes[0]}</p>}
           {!showingDemo && bundle?.unassigned?.length > 0 && (
-            <p className="import-note">Unassigned: {bundle.unassigned.slice(0, 8).join(', ')}{bundle.unassigned.length > 8 ? ` +${bundle.unassigned.length - 8}` : ''}</p>
+            <p className="import-note">{t('record.unassigned', { list: `${bundle.unassigned.slice(0, 8).join(', ')}${bundle.unassigned.length > 8 ? ` +${bundle.unassigned.length - 8}` : ''}` })}</p>
           )}
           <div className="chips">
             {metrics.slice(0, 12).map((item) => (
@@ -481,7 +563,7 @@ export default function App() {
             ))}
           </div>
           {metrics.length > 12 && (
-            <select aria-label="Measure" value={metric.id} onChange={(event) => setMetricId(event.target.value)}>
+            <select aria-label={t('aria.measure')} value={metric.id} onChange={(event) => setMetricId(event.target.value)}>
               {metrics.map((item) => (
                 <option key={item.id} value={item.id}>{item.label}</option>
               ))}
@@ -490,8 +572,8 @@ export default function App() {
           <Chart days={days} metric={metric} />
           {!showingDemo && (
             <p className="import-note">
-              {refStats ? `Personal reference ${refStats.mean.toFixed(2)} ± ${refStats.std.toFixed(2)}` : 'No reference yet'}
-              {roll ? ` · previous ${roll.n} sols ${roll.mean.toFixed(2)} ± ${roll.std.toFixed(2)}` : ' · no previous sols'}
+              {refStats ? t('record.referenceMean', { mean: refStats.mean.toFixed(2), std: refStats.std.toFixed(2) }) : t('record.noReference')}
+              {roll ? ` · ${t('record.previous', { n: roll.n, mean: roll.mean.toFixed(2), std: roll.std.toFixed(2) })}` : ` · ${t('record.noPrevious')}`}
               {metric.unit ? ` ${metric.unit}` : ''}
             </p>
           )}
@@ -506,26 +588,26 @@ export default function App() {
           </div>
         </section>
 
-        <section className="panel copilot" aria-label="Copilot">
+        <section className="panel copilot" aria-label={t('aria.copilot')}>
           <div className="copilot-scroll">
-          <h2>Action copilot</h2>
+          <h2>{t('copilot.title')}</h2>
           <p className="delay">
-            Ground round-trip is {COMMS_DELAY_MIN} minutes. This plan does not wait for it.
+            {t('copilot.delay', { min: COMMS_DELAY_MIN })}
           </p>
           {!showingDemo && report.unmeasured && (
             <div className="alert calm">
-              <b>Clinical cruise score off</b>
+              <b>{t('copilot.clinicalOff')}</b>
               <p>
                 {domainAxes.some((axis) => axis.detail !== '—')
-                  ? `This file fills ${domainAxes.filter((axis) => axis.detail !== '—').map((axis) => axis.label).join(', ')}. The other five labels stay empty.`
-                  : 'None of the six labels has a number in this file, so no cruise protocol starts.'}
+                  ? t('copilot.fills', { list: domainAxes.filter((axis) => axis.detail !== '—').map((axis) => t(`nav.${axis.id}`)).join(', ') })
+                  : t('copilot.none')}
               </p>
             </div>
           )}
           {showingDemo && !report.unmeasured && report.alerts.length === 0 && (
             <div className="alert calm">
-              <b>Six measured categories</b>
-              <p>Cardiovasculaire, Neurologie, Immunité, Psychologie, Nutrition, Santé rénale.</p>
+              <b>{t('copilot.categories')}</b>
+              <p>{t('copilot.categoriesList')}</p>
             </div>
           )}
           {report.alerts.slice(0, 3).map((alert) => (
@@ -550,17 +632,22 @@ export default function App() {
                   ))}
                 </ol>
                 <button className={checked ? 'mark done' : 'mark'} aria-pressed={checked} onClick={() => toggleProtocol(protocol.id)}>
-                  {checked ? 'Validated on board' : 'Mark done'}
+                  {checked ? t('protocol.done') : t('protocol.mark')}
                 </button>
               </article>
             )
           })}
-          {!showingDemo && flaggedSols.length > 0 && (
+          {flaggedSols.length > 0 && (
             <div className="alert degraded">
-              <b>Top drivers</b>
+              <b>{t('copilot.drivers')}</b>
               {flaggedSols.map((item) => (
                 <p key={`${item.phase ?? ''}:${item.day}`}>
-                  Sol {item.sol}{item.phase ? ` · ${item.phase}` : ''} · score {item.anomaly} · {item.drivers.filter((driver) => driver.z >= 2).map((driver) => `${driver.label || driver.feature} (${driver.domain}) |z| ${driver.z}`).join(' · ')}
+                  {t('copilot.sol', {
+                    sol: item.sol,
+                    phase: item.phase ? ` · ${item.phase}` : '',
+                    score: item.anomaly,
+                    drivers: item.drivers.filter((driver) => driver.z >= 2).map((driver) => `${driver.label || driver.feature} (${driver.domain}) |z| ${driver.z}`).join(' · '),
+                  })}
                 </p>
               ))}
             </div>
@@ -570,11 +657,11 @@ export default function App() {
           {hasSelf && (
             <div className="self-check">
               <div className="section-head">
-                <span>Self-check · 3 questions</span>
+                <span>{t('self.title')}</span>
               </div>
-              <Slider label="Mood" low="Low" high="Steady" value={self.mood} onChange={(value) => setSelf('mood', value)} />
-              <Slider label="Sharpness" low="Foggy" high="Sharp" value={self.focus} onChange={(value) => setSelf('focus', value)} />
-              <Slider label="Exhaustion" low="Fresh" high="Depleted" value={self.fatigue} onChange={(value) => setSelf('fatigue', value)} />
+              <Slider label={t('self.mood')} low={t('self.moodLow')} high={t('self.moodHigh')} value={self.mood} onChange={(value) => setSelf('mood', value)} />
+              <Slider label={t('self.focus')} low={t('self.focusLow')} high={t('self.focusHigh')} value={self.focus} onChange={(value) => setSelf('focus', value)} />
+              <Slider label={t('self.fatigue')} low={t('self.fatigueLow')} high={t('self.fatigueHigh')} value={self.fatigue} onChange={(value) => setSelf('fatigue', value)} />
             </div>
           )}
         </section>
@@ -583,7 +670,7 @@ export default function App() {
       </main>
 
       <footer className="foot">
-        <span>Public starter tables for the six measured categories. Not a medical device.</span>
+        <span>{t('footer.note')}</span>
       </footer>
     </div>
   )

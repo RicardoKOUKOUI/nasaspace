@@ -1,26 +1,27 @@
 import { useMemo, useState } from 'react'
 import { CLINIC_SCENARIOS, diagnose, manualSeries } from '../lib/diagnostic.ts'
+import { t, useLocale } from '../i18n/index.ts'
 
-const FIELDS = [
-  ['hr', 'FC repos', 'bpm', 1],
-  ['hrv', 'HRV', 'ms', 1],
-  ['sbp', 'Systolique', 'mmHg', 1],
-  ['dbp', 'Diastolique', 'mmHg', 1],
-  ['spo2', 'SpO2', '%', 1],
-  ['aredMin', 'ARED', 'min', 1],
-  ['loadKg', 'Charge', 'kg', 1],
-  ['boneLossPctMonth', 'Perte osseuse', '%/mois', 0.1],
-  ['vitaminDIu', 'Vitamine D', 'UI', 10],
-  ['calciumMg', 'Calcium', 'mg', 10],
-  ['doseRate', 'Débit', 'mSv/j', 0.1],
-  ['cumDoseMsv', 'Dose cumulée', 'mSv', 0.1],
-  ['crp', 'CRP', 'mg/L', 0.1],
-  ['sleepH', 'Sommeil', 'h', 0.1],
-  ['sleepQuality', 'Qualité sommeil', '0-100', 1],
-  ['stress', 'Stress', '1-10', 1],
-  ['fatigue', 'Fatigue', '1-10', 1],
-  ['vigilance', 'Vigilance', '1-10', 1],
-  ['hydration', 'Hydratation', '1-10', 1],
+const FIELD_KEYS = [
+  ['hr', 'bpm', 1],
+  ['hrv', 'ms', 1],
+  ['sbp', 'mmHg', 1],
+  ['dbp', 'mmHg', 1],
+  ['spo2', '%', 1],
+  ['aredMin', 'min', 1],
+  ['loadKg', 'kg', 1],
+  ['boneLossPctMonth', '%/mo', 0.1],
+  ['vitaminDIu', 'IU', 10],
+  ['calciumMg', 'mg', 10],
+  ['doseRate', 'mSv/d', 0.1],
+  ['cumDoseMsv', 'mSv', 0.1],
+  ['crp', 'mg/L', 0.1],
+  ['sleepH', 'h', 0.1],
+  ['sleepQuality', '0-100', 1],
+  ['stress', '1-10', 1],
+  ['fatigue', '1-10', 1],
+  ['vigilance', '1-10', 1],
+  ['hydration', '1-10', 1],
 ]
 
 function draftFrom(days) {
@@ -34,6 +35,7 @@ function draftFrom(days) {
 }
 
 export function DiagnosticPage() {
+  useLocale()
   const initial = new URLSearchParams(window.location.search).get('clinic')
   const [clinicId, setClinicId] = useState(CLINIC_SCENARIOS.some((item) => item.id === initial) ? initial : 'nominal')
   const [checked, setChecked] = useState([])
@@ -72,12 +74,10 @@ export function DiagnosticPage() {
   }
 
   return (
-    <section className="panel clinic" aria-label="Diagnostic">
-      <h2>Diagnostic</h2>
-      <p className="hint">
-        Scénario simulé. Seuils de règles HRP, pas un modèle entraîné sur des données d’astronautes. Not a medical device.
-      </p>
-      <div className="clinic-bar" role="toolbar" aria-label="Scénarios simulés">
+    <section className="panel clinic" aria-label={t('clinic.title')}>
+      <h2>{t('clinic.title')}</h2>
+      <p className="hint">{t('clinic.disclaimer')}</p>
+      <div className="clinic-bar" role="toolbar" aria-label={t('clinic.toolbar')}>
         {CLINIC_SCENARIOS.map((item) => (
           <button
             key={item.id}
@@ -86,11 +86,11 @@ export function DiagnosticPage() {
             aria-pressed={!manual && clinicId === item.id}
             onClick={() => selectScenario(item.id)}
           >
-            <b>{item.label}</b>
+            <b>{t(`clinic.scenario.${item.id}`)}</b>
           </button>
         ))}
         <button type="button" className={manual ? 'scenario active' : 'scenario'} aria-pressed={manual} onClick={openManual}>
-          <b>Saisir mes constantes manuellement</b>
+          <b>{t('clinic.manual')}</b>
         </button>
       </div>
 
@@ -99,20 +99,20 @@ export function DiagnosticPage() {
           <div className={`score-block status-${report.band === 'nominal' ? 'ready' : report.band === 'vigilance' ? 'degraded' : 'risk'}`}>
             <em>{report.score}</em>
             <div className={report.band === 'nominal' ? 'status-ready' : report.band === 'vigilance' ? 'status-degraded' : 'status-risk'}>
-              {report.bandLabel}
+              {t(`clinic.band.${report.band}`)}
             </div>
-            <p>Préparation mission 0–100. Nominal dès 80, vigilance dès 60, critique en dessous.</p>
-            <p className="hint">Si rien n’est fait, +7 jours : {report.projectedScore}.</p>
+            <p>{t('clinic.scoreHelp')}</p>
+            <p className="hint">{t('clinic.projection', { score: report.projectedScore })}</p>
           </div>
 
           {report.diagnoses.length === 0 ? (
-            <p>Aucune des cinq règles croisées n’est active.</p>
+            <p>{t('clinic.none')}</p>
           ) : (
             report.diagnoses.map((item) => (
               <article className="dx-card" key={item.id}>
                 <div className="axis-top">
-                  <span>{item.name}</span>
-                  <b className={item.severity === 'critique' ? 'status-risk' : 'status-degraded'}>{item.severityLabel}</b>
+                  <span>{t(`clinic.dx.${item.id}`)}</span>
+                  <b className={item.severity === 'critique' ? 'status-risk' : 'status-degraded'}>{t(`clinic.severity.${item.severity}`)}</b>
                 </div>
                 <p>{item.biomarkers}</p>
                 <p className="hint">{item.projection}</p>
@@ -122,16 +122,16 @@ export function DiagnosticPage() {
         </div>
 
         <div>
-          <h3>Contre-mesures</h3>
+          <h3>{t('clinic.actions')}</h3>
           {report.actions.length === 0 ? (
-            <p className="hint">Aucune contre-mesure d’urgence. Le plan quotidien suffit.</p>
+            <p className="hint">{t('clinic.noActions')}</p>
           ) : (
             report.actions.map((action) => (
               <label className="check-row" key={action.id}>
                 <input type="checkbox" checked={checked.includes(action.id)} onChange={() => toggle(action.id)} />
                 <span>
-                  <b>{action.label}</b>
-                  <small> +{action.recovery} sur le score</small>
+                  <b>{t(`clinic.action.${action.id}`)}</b>
+                  <small>{t('clinic.recovery', { n: action.recovery })}</small>
                 </span>
               </label>
             ))
@@ -140,7 +140,7 @@ export function DiagnosticPage() {
           <div className="reading-grid clinic-groups">
             {report.groups.map((group) => (
               <article className="reading" key={group.id}>
-                <span>{group.label}</span>
+                <span>{t(`clinic.group.${group.id}`)}</span>
                 <strong>{group.score}</strong>
                 {group.lines.map((line) => (
                   <p key={line}>{line}</p>
@@ -153,32 +153,32 @@ export function DiagnosticPage() {
 
       {manual && (
         <form className="manual-grid" onSubmit={(event) => event.preventDefault()}>
-          {FIELDS.map(([key, label, unit, step]) => (
+          {FIELD_KEYS.map(([key, unit, step]) => (
             <label key={key}>
-              {label}
+              {t(`clinic.field.${key}`)}
               <input
                 type="number"
                 step={step}
                 value={draft.today[key]}
-                aria-label={label}
+                aria-label={t(`clinic.field.${key}`)}
                 onChange={(event) => editToday(key, event.target.value)}
               />
               <small>{unit}</small>
             </label>
           ))}
           <label>
-            FC il y a 3 jours
-            <input type="number" value={draft.hrAgo} aria-label="FC il y a 3 jours" onChange={(event) => setDraft((current) => ({ ...current, hrAgo: Number(event.target.value) }))} />
+            {t('clinic.hrAgo')}
+            <input type="number" value={draft.hrAgo} aria-label={t('clinic.hrAgo')} onChange={(event) => setDraft((current) => ({ ...current, hrAgo: Number(event.target.value) }))} />
             <small>bpm</small>
           </label>
           <label>
-            HRV il y a 3 jours
-            <input type="number" value={draft.hrvAgo} aria-label="HRV il y a 3 jours" onChange={(event) => setDraft((current) => ({ ...current, hrvAgo: Number(event.target.value) }))} />
+            {t('clinic.hrvAgo')}
+            <input type="number" value={draft.hrvAgo} aria-label={t('clinic.hrvAgo')} onChange={(event) => setDraft((current) => ({ ...current, hrvAgo: Number(event.target.value) }))} />
             <small>ms</small>
           </label>
           <label>
-            ARED il y a 3 jours
-            <input type="number" value={draft.aredAgo} aria-label="ARED il y a 3 jours" onChange={(event) => setDraft((current) => ({ ...current, aredAgo: Number(event.target.value) }))} />
+            {t('clinic.aredAgo')}
+            <input type="number" value={draft.aredAgo} aria-label={t('clinic.aredAgo')} onChange={(event) => setDraft((current) => ({ ...current, aredAgo: Number(event.target.value) }))} />
             <small>min</small>
           </label>
         </form>

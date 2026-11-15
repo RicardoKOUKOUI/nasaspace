@@ -13,6 +13,7 @@ export type ImportResult = {
   duplicates: string[]
   rejectedCells: string[]
   notes: string[]
+  reference: string | null
 }
 
 type Mapped = {
@@ -226,6 +227,7 @@ function emptyResult(label: string, errors: string[], notes: string[] = []): Imp
     duplicates: [],
     rejectedCells: [],
     notes,
+    reference: null,
   }
 }
 
@@ -307,6 +309,7 @@ function finalize(label: string, drafts: Draft[], measures: MeasureMeta[], notes
     duplicates,
     rejectedCells: rejected,
     notes,
+    reference: null,
   }
 }
 
@@ -626,7 +629,27 @@ function parseJsonImport(text: string, label: string): ImportResult {
   return fromRecords(days as Record<string, unknown>[], label)
 }
 
+export function headerReference(text: string): string | null {
+  const comments: string[] = []
+  for (const line of text.replace(/^\uFEFF/, '').split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed.startsWith('#')) continue
+    comments.push(trimmed.slice(1).trim())
+  }
+  if (comments.length === 0) return null
+  const blob = comments.join(' ')
+  const url = blob.match(/https?:\/\/[^\s)]+/)
+  if (url) return url[0].replace(/[.,;]+$/, '')
+  const doi = blob.match(/\b10\.\d{4,9}\/[^\s)]+/)
+  if (doi) return `https://doi.org/${doi[0].replace(/[.,;]+$/, '')}`
+  return null
+}
+
 export function parseImport(text: string, filename = 'upload'): ImportResult {
+  return { ...readImport(text, filename), reference: headerReference(text) }
+}
+
+function readImport(text: string, filename = 'upload'): ImportResult {
   const trimmed = text.replace(/^\uFEFF/, '').trim()
   if (!trimmed) return emptyResult(filename, ['The file is empty.'])
   if (trimmed.startsWith('<')) {

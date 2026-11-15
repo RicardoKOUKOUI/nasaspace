@@ -111,7 +111,17 @@ button, input { font: inherit; color: inherit; }
 }
 .reading small { font-size: 16px; color: var(--color-cyan); }
 
-.clinic { display: flex; flex-direction: column; gap: 12px; }
+.method h3 {
+  margin: 18px 0 6px;
+  font-family: var(--font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 16px;
+}
+.method p { max-width: 72ch; line-height: 1.45; }
+.method-sources { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-direction: column; gap: 8px; }
+.method-sources li { font-size: 13px; line-height: 1.4; }
+.method-sources a { color: var(--color-cyan); word-break: break-all; }
 .clinic-bar { display: flex; flex-wrap: wrap; gap: 8px; }
 .clinic-bar .scenario b { text-transform: none; letter-spacing: 0.02em; font-size: 14px; }
 .clinic-bar .scenario.active { border-color: var(--color-cyan); color: var(--color-cyan); }
@@ -230,6 +240,18 @@ button, input { font: inherit; color: inherit; }
   font-size: 18px;
   letter-spacing: 0.04em;
 }
+.lang-toggle { display: flex; gap: 4px; flex: none; }
+.lang-toggle button {
+  border: 1px solid rgba(126, 176, 214, 0.35);
+  background: transparent;
+  color: var(--color-muted);
+  border-radius: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.lang-toggle button.on { color: var(--color-cyan); border-color: var(--color-cyan); }
 
 .scenarios { display: flex; gap: 8px; }
 
@@ -356,6 +378,17 @@ button, input { font: inherit; color: inherit; }
   color: var(--color-muted);
   font-size: 12px;
   line-height: 1.4;
+}
+.import-note a { color: var(--color-cyan); }
+.source-badge {
+  display: inline-block;
+  margin-right: 8px;
+  border: 1px solid var(--color-cyan);
+  color: var(--color-cyan);
+  padding: 1px 6px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 11px;
 }
 .import-note select, .import-bar select, .trends > select {
   border: 1px solid rgba(142, 166, 191, 0.28);
@@ -498,9 +531,6 @@ a.ghost { text-decoration: none; display: inline-flex; align-items: center; }
 .foot {
   padding: 0 6px 2px;
   line-height: 1.3;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .resettle { animation: settle 0.45s ease; }
@@ -539,8 +569,11 @@ a.ghost { text-decoration: none; display: inline-flex; align-items: center; }
   }
   .nav-item {
     flex: 1 0 auto;
-    min-width: 92px;
+    min-width: 72px;
     text-align: center;
-    padding: 8px 10px;
+    padding: 8px 8px;
+    font-size: 12px;
   }
+  .reading strong { font-size: 32px; }
+  .foot { white-space: normal; }
 }
