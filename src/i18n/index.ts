@@ -4,7 +4,7 @@ import { fr } from './fr.ts'
 export type Locale = 'en' | 'fr'
 
 const catalogs = { en, fr }
-let locale: Locale = 'fr'
+let locale: Locale = 'en'
 
 export function getLocale(): Locale {
   return locale

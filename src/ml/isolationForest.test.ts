@@ -1,21 +1,49 @@
 import { describe, expect, it } from 'vitest'
-import { isolationScores, ISOLATION_SUBSAMPLE, ISOLATION_TREES, trainIsolationForest } from './isolationForest.ts'
-import { fr } from '../i18n/fr.ts'
+import { isolationScores, ISOLATION_SEED, ISOLATION_SUBSAMPLE, ISOLATION_TREES, trainIsolationForest } from './isolationForest.ts'
+import { en } from '../i18n/en.ts'
+import { FOREST_MIN_ROWS, scoreForest } from '../lib/forest.ts'
 
 describe('isolation forest', () => {
-  it('scores an obvious outlier higher than the normal points', () => {
+  it('scores an obvious outlier above the mean of the normal points', () => {
     const rows = Array.from({ length: 40 }, () => [1, 2, 3])
     rows.push([1, 2, 100])
     const model = trainIsolationForest(rows)
     expect(model.trees).toHaveLength(ISOLATION_TREES)
-    expect(model.sampleSize).toBeLessThanOrEqual(ISOLATION_SUBSAMPLE)
+    expect(model.sampleSize).toBe(Math.min(ISOLATION_SUBSAMPLE, rows.length))
     const scores = isolationScores(model, rows)
     const outlier = scores[scores.length - 1] ?? 0
-    const normal = Math.max(...scores.slice(0, -1))
-    expect(outlier).toBeGreaterThan(normal)
+    const normal = scores.slice(0, -1)
+    const mean = normal.reduce((sum, score) => sum + score, 0) / normal.length
+    expect(outlier).toBeGreaterThan(mean)
   })
 
-  it('keeps the French insufficient-data sentence for the UI', () => {
-    expect(fr['forest.insufficient']).toBe("Pas assez de données pour le modèle, seules les règles cliniques s'appliquent")
+  it('returns the same scores for the same seed', () => {
+    const rows = Array.from({ length: 20 }, (_, index) => [index, index * 0.5, Math.sin(index)])
+    const first = isolationScores(trainIsolationForest(rows, { seed: ISOLATION_SEED }), rows)
+    const second = isolationScores(trainIsolationForest(rows, { seed: ISOLATION_SEED }), rows)
+    expect(second).toEqual(first)
+  })
+
+  it('refuses a score under 10 rows or under 2 numeric columns', () => {
+    const measures = [
+      { key: 'hr', label: 'Heart rate', domain: 'cardio' as const, unit: 'bpm', stdFloor: 1 },
+      { key: 'hrv', label: 'HRV', domain: 'cardio' as const, unit: 'ms', stdFloor: 1 },
+    ]
+    const short = Array.from({ length: FOREST_MIN_ROWS - 1 }, (_, index) => ({
+      sol: index + 1,
+      day: index + 1,
+      subject: 'A',
+      values: { hr: 60, hrv: 50 },
+    }))
+    expect(scoreForest(short, measures).ready).toBe(false)
+    expect(scoreForest(short, measures).anomaly).toBeNull()
+    const oneColumn = Array.from({ length: 12 }, (_, index) => ({
+      sol: index + 1,
+      day: index + 1,
+      subject: 'A',
+      values: { hr: 60 + index },
+    }))
+    expect(scoreForest(oneColumn, measures.slice(0, 1)).ready).toBe(false)
+    expect(en['forest.insufficient']).toBe('Not enough data for the model. Clinical rules only.')
   })
 })

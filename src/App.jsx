@@ -106,14 +106,18 @@ export default function App() {
     [showingDemo, importedDays, self.mood, self.focus, self.fatigue],
   )
   const report = showingDemo ? demoReport : importReport
+  const nominalRecords = useMemo(() => cruiseRecords(generateMission('nominal').days), [])
   const demoRecords = useMemo(() => cruiseRecords(mission.days), [mission])
-  const demoForest = useMemo(() => scoreForest(demoRecords, CRUISE_MEASURES), [demoRecords])
+  const demoForest = useMemo(
+    () => scoreForest(demoRecords, CRUISE_MEASURES, { trainOn: nominalRecords }),
+    [demoRecords, nominalRecords],
+  )
   const importForest = useMemo(
     () => (showingDemo || !bundle ? null : scoreForest(importedDays, bundle.measures)),
     [showingDemo, importedDays, bundle],
   )
   const forest = showingDemo ? demoForest : importForest
-  const datasetLabel = showingDemo ? `simulation ${scenario}` : (bundle?.label || subject || 'import')
+  const datasetLabel = showingDemo ? 'Nominal' : (bundle?.label || subject || 'import')
   const metrics = showingDemo
     ? METRICS.filter((item) => !['dose', 'aredMin', 'bmd', 'crp'].includes(item.id))
     : (bundle?.measures ?? []).map(viewOf)
@@ -269,9 +273,9 @@ export default function App() {
   const ss = String(clock % 60).padStart(2, '0')
   const refStats = !showingDemo && metric ? columnStats(valuesOf(referenceSlice(days), metric.id)) : null
   const roll = !showingDemo && metric ? rollingBaseline(days, days.length - 1, metric.id) : null
-  const flaggedSols = !showingDemo && forest?.perSol
+  const flaggedSols = forest?.perSol
     ? forest.perSol
-        .filter((item) => item.anomaly >= 40 && item.drivers.some((driver) => driver.z >= 2))
+        .filter((item) => item.flagged)
         .slice()
         .sort((a, b) => b.anomaly - a.anomaly)
         .slice(0, 3)
@@ -556,7 +560,7 @@ export default function App() {
               </article>
             )
           })}
-          {!showingDemo && flaggedSols.length > 0 && (
+          {flaggedSols.length > 0 && (
             <div className="alert degraded">
               <b>Top drivers</b>
               {flaggedSols.map((item) => (

@@ -1,4 +1,3 @@
-import { referenceSlice, referenceZ } from './baseline.ts'
 import type { DayRecord, MeasureMeta } from './domains.ts'
 import {
   ISOLATION_CONTAMINATION,
@@ -28,6 +27,7 @@ export type ForestSol = {
   day: number
   phase?: string
   anomaly: number
+  flagged: boolean
   drivers: ForestDriver[]
 }
 
@@ -76,6 +76,8 @@ export function cruiseRecords(days: Array<Record<string, unknown>>): DayRecord[]
   })
 }
 
+const NOT_IN_FOREST = new Set(['bmd', 'cumDose'])
+
 function percentile(sorted: number[], percent: number): number {
   if (sorted.length === 0) return 0
   const first = sorted[0] ?? 0
@@ -89,48 +91,86 @@ function percentile(sorted: number[], percent: number): number {
   return left * (high - rank) + right * (rank - low)
 }
 
-function toPercent(score: number, median: number, flagAt: number): number {
-  const span = Math.max(flagAt - median, 1e-6)
-  const raw = ((score - median) / span) * 40
-  return Math.max(0, Math.min(100, Math.round(raw)))
+function toHundred(score: number): number {
+  return Math.max(0, Math.min(100, Math.round(score * 100)))
 }
 
-function usableMeasures(days: DayRecord[], measures: MeasureMeta[]): MeasureMeta[] {
-  const reference = referenceSlice(days)
-  if (reference.length === 0) return []
+function isPre(phase: string | undefined): boolean {
+  return typeof phase === 'string' && (/^PRE/i.test(phase) || /pre[-\s]?flight/i.test(phase))
+}
+
+/** PRE_TEST or pre-flight when present, otherwise the first 7 sols. */
+export function forestReference(days: DayRecord[]): { rows: DayRecord[]; kind: 'pre' | 'first' } {
+  const pre = days.filter((day) => isPre(day.phase))
+  if (pre.length > 0) return { rows: pre, kind: 'pre' }
+  return { rows: days.slice(0, 7), kind: 'first' }
+}
+
+function presentMeasures(reference: DayRecord[], measures: MeasureMeta[]): MeasureMeta[] {
   return measures.filter((measure) => {
-    let present = 0
-    for (const day of reference) {
-      if (typeof day.values[measure.key] === 'number') present += 1
-    }
-    return present * 2 >= reference.length
+    if (NOT_IN_FOREST.has(measure.key)) return false
+    return reference.some((day) => {
+      const value = day.values[measure.key]
+      return typeof value === 'number' && Number.isFinite(value)
+    })
+  }).slice(0, 40)
+}
+
+function columnStats(reference: DayRecord[], key: string): { mean: number; std: number } {
+  const values: number[] = []
+  for (const day of reference) {
+    const value = day.values[key]
+    if (typeof value === 'number' && Number.isFinite(value)) values.push(value)
+  }
+  const mean = values.reduce((sum, value) => sum + value, 0) / Math.max(values.length, 1)
+  const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / Math.max(values.length, 1)
+  return { mean, std: Math.sqrt(variance) }
+}
+
+function zRow(day: DayRecord, measures: MeasureMeta[], stats: { mean: number; std: number }[]): number[] {
+  return measures.map((measure, index) => {
+    const value = day.values[measure.key]
+    const mean = stats[index]?.mean ?? 0
+    const std = stats[index]?.std ?? 0
+    const filled = typeof value === 'number' && Number.isFinite(value) ? value : mean
+    const scale = std > 1e-9 ? std : Math.max(measure.stdFloor, 1e-6)
+    return (filled - mean) / scale
   })
 }
 
-function solDrivers(days: DayRecord[], index: number, measures: MeasureMeta[]): ForestDriver[] {
+function topDrivers(day: DayRecord, measures: MeasureMeta[], stats: { mean: number; std: number }[]): ForestDriver[] {
   const drivers: ForestDriver[] = []
-  for (const measure of measures) {
-    const z = referenceZ(days, index, measure)
-    if (z == null) continue
+  measures.forEach((measure, index) => {
+    const value = day.values[measure.key]
+    if (typeof value !== 'number' || !Number.isFinite(value)) return
+    const mean = stats[index]?.mean ?? 0
+    const std = stats[index]?.std ?? 0
+    const scale = std > 1e-9 ? std : Math.max(measure.stdFloor, 1e-6)
+    const z = Math.abs((value - mean) / scale)
     drivers.push({
       feature: measure.key,
       label: measure.label,
       domain: measure.domain,
       z: Math.round(z * 100) / 100,
     })
-  }
+  })
   drivers.sort((a, b) => b.z - a.z)
   return drivers.slice(0, 3)
 }
 
 /**
- * Train on the person's reference rows only (PRE_TEST when present, otherwise
- * the opening sols) and score every later row. No synthetic copies. Fewer than
- * 10 rows, or fewer than 2 numeric columns, returns no score.
+ * Z-score the numeric columns on the reference (PRE / pre-flight, else the
+ * first 7 sols), train there, and score every loaded sol. Pass `trainOn` to
+ * score a simulated scenario against the Nominal reference. Fewer than 10
+ * rows, or fewer than 2 numeric columns, returns no score.
  */
-export function scoreForest(days: DayRecord[], measures: MeasureMeta[]): ForestReport {
-  const hasPre = days.some((day) => typeof day.phase === 'string' && /^PRE/i.test(day.phase))
-  const reference = referenceSlice(days)
+export function scoreForest(
+  days: DayRecord[],
+  measures: MeasureMeta[],
+  options: { trainOn?: DayRecord[] } = {},
+): ForestReport {
+  const source = options.trainOn ?? days
+  const { rows: reference, kind } = forestReference(source)
   const empty: ForestReport = {
     anomaly: null,
     ready: false,
@@ -140,54 +180,45 @@ export function scoreForest(days: DayRecord[], measures: MeasureMeta[]): ForestR
     series: [],
     perSol: [],
     referenceSols: reference.length,
-    referenceKind: hasPre ? 'pre' : 'first',
+    referenceKind: kind,
   }
-  const selected = usableMeasures(days, measures).slice(0, 40)
+  const selected = presentMeasures(reference, measures)
   if (days.length < FOREST_MIN_ROWS || selected.length < FOREST_MIN_VARIABLES || reference.length === 0) return empty
-
-  const raw: number[][] = days.map((day) => selected.map((measure) => day.values[measure.key] ?? Number.NaN))
-  const inReference = days.map((day) => reference.includes(day))
-  const refRows = raw.filter((_, index) => inReference[index])
-  const fill = selected.map((_, index) => {
-    const seen: number[] = []
-    for (const row of refRows) {
-      const value = row[index]
-      if (typeof value === 'number' && Number.isFinite(value)) seen.push(value)
-    }
-    if (seen.length === 0) return 0
-    return seen.reduce((sum, value) => sum + value, 0) / seen.length
-  })
-  const matrix = raw.map((row) => row.map((value, index) => (Number.isFinite(value) ? value : (fill[index] ?? 0))))
-  const nominal = matrix.filter((_, index) => inReference[index])
-  if (nominal.length === 0) return empty
-  const model = trainIsolationForest(nominal, {
+  const stats = selected.map((measure) => columnStats(reference, measure.key))
+  const train = reference.map((day) => zRow(day, selected, stats))
+  const matrix = days.map((day) => zRow(day, selected, stats))
+  const model = trainIsolationForest(train, {
     trees: FOREST_TREES,
     subsample: FOREST_SUBSAMPLE,
     contamination: FOREST_CONTAMINATION,
     seed: FOREST_SEED,
   })
   const rawScores = isolationScores(model, matrix)
-  const referenceScores = rawScores.filter((_, index) => inReference[index]).slice().sort((a, b) => a - b)
-  const median = percentile(referenceScores, 50)
-  const flagAt = percentile(referenceScores, 100 * (1 - FOREST_CONTAMINATION))
-  const series = rawScores.map((score) => toPercent(score, median, flagAt))
-  const perSol: ForestSol[] = days.map((day, index) => ({
-    sol: day.sol,
-    day: day.day,
-    ...(day.phase ? { phase: day.phase } : {}),
-    anomaly: series[index] ?? 0,
-    drivers: solDrivers(days, index, selected),
-  }))
+  const trainScores = isolationScores(model, train).map(toHundred).sort((a, b) => a - b)
+  const threshold = percentile(trainScores, 100 * (1 - FOREST_CONTAMINATION))
+  const series = rawScores.map(toHundred)
+  const perSol: ForestSol[] = days.map((day, index) => {
+    const anomaly = series[index] ?? 0
+    const flagged = anomaly > threshold
+    return {
+      sol: day.sol,
+      day: day.day,
+      ...(day.phase ? { phase: day.phase } : {}),
+      anomaly,
+      flagged,
+      drivers: flagged ? topDrivers(day, selected, stats) : [],
+    }
+  })
   const last = days.length - 1
   return {
     anomaly: series[last] ?? null,
     ready: true,
-    flaggedSols: series.filter((score) => score >= 40).length,
+    flaggedSols: perSol.filter((item) => item.flagged).length,
     sols: days.length,
     drivers: perSol[last]?.drivers ?? [],
     series,
     perSol,
     referenceSols: reference.length,
-    referenceKind: hasPre ? 'pre' : 'first',
+    referenceKind: kind,
   }
 }
