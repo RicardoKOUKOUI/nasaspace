@@ -327,7 +327,7 @@ export default function App() {
             </div>
           ))}
           {!showingDemo && domainAxes.length > 0 && (
-            <p className="hint">Measured columns only. Bone, radiation, cabin air, and one-session muscle stay off this screen.</p>
+            <p className="hint">Six measured categories. Bone, radiation, environment, and one-session muscle stay off this screen.</p>
           )}
           {!showingDemo && domainAxes.length === 0 && (
             <p className="hint">No heart, sensorimotor, immune, nutrition, renal, or behavior series in this file.</p>
@@ -438,9 +438,9 @@ export default function App() {
             <div className="alert calm">
               <b>Clinical cruise score off</b>
               <p>
-                {domainAxes.length
-                  ? `This file shows ${domainAxes.map((axis) => axis.label).join(', ')}. Bone, radiation, cabin air, and one-session muscle are not scored here.`
-                  : 'This file has none of the domains on this screen, so no cruise protocol starts.'}
+                {domainAxes.some((axis) => axis.detail !== '—')
+                  ? `This file fills ${domainAxes.filter((axis) => axis.detail !== '—').map((axis) => axis.label).join(', ')}. The other five labels stay empty.`
+                  : 'None of the six labels has a number in this file, so no cruise protocol starts.'}
               </p>
             </div>
           )}

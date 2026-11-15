@@ -3,15 +3,15 @@ import type { DayRecord, DomainId, MeasureMeta } from './domains.ts'
 /** Domains with no usable per-person series. They stay off the imported dashboard. */
 export const HIDDEN_DASHBOARD_DOMAINS = new Set<DomainId>(['muscle', 'radiation', 'environment'])
 
-const ORDER = ['cardio', 'neuro', 'immune', 'nutrition', 'renal', 'behavior'] as const
+const ORDER = ['cardio', 'neuro', 'immune', 'behavior', 'nutrition', 'renal'] as const
 
 const LABELS: Record<(typeof ORDER)[number], string> = {
-  cardio: 'Heart',
-  neuro: 'Sensorimotor',
-  immune: 'Immune',
+  cardio: 'Cardiovasculaire',
+  neuro: 'Neurologie',
+  immune: 'Immunité',
+  behavior: 'Psychologie',
   nutrition: 'Nutrition',
-  renal: 'Renal',
-  behavior: 'Behavior',
+  renal: 'Santé rénale',
 }
 
 export type DashboardDomain = {
@@ -42,16 +42,16 @@ export function dashboardDomains(measures: MeasureMeta[], days: DayRecord[]): Da
     list.push(text)
     parts.set(id, list)
   }
-  return ORDER.flatMap((id) => {
+  return ORDER.map((id) => {
     const list = parts.get(id)
-    if (!list?.length) return []
+    if (!list?.length) return { id, label: LABELS[id], detail: '—' }
     const shown = list.slice(0, 4)
     const extra = list.length - shown.length
-    return [{
+    return {
       id,
       label: LABELS[id],
       detail: extra > 0 ? `${shown.join(' · ')} · +${extra}` : shown.join(' · '),
-    }]
+    }
   })
 }
 
