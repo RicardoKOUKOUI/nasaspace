@@ -141,6 +141,20 @@ export const en = {
   'clinic.group.muscle': 'Musculoskeletal',
   'clinic.group.radiation': 'Radiation and immunity',
   'clinic.group.behavior': 'Behavior and sleep',
+  'nav.method': 'Method & Data',
+  'method.title': 'Method & Data',
+  'method.notDevice': 'Not a medical device.',
+  'method.archTitle': 'Onboard path',
+  'method.archBody': 'Bio-Monitor and Astroskin wearables, and the dosimeters, feed the onboard store. ASTRO-PULSE reads that store on the vehicle and the copilot writes a countermeasure plan the crew can start. Nothing in that path calls Earth.',
+  'method.offlineTitle': 'Offline',
+  'method.offlineBody': 'A Mars round trip is about {min} minutes. The console, the starter tables, and an imported file stay on this device.',
+  'method.rulesTitle': 'Clinical rules',
+  'method.rulesBody': 'Mission readiness and the diagnostic page use published NASA HRP-style thresholds. Those rules are separate from the isolation forest and they are not a model trained on the loaded tables.',
+  'method.forestTitle': 'Isolation Forest',
+  'method.forestBody': 'The forest trains in the browser on the numeric columns that are actually present. A loaded file uses its PRE or pre-flight rows when they exist, otherwise its first 7 sols. The three demonstration scenarios train on the whole Nominal series. A sol is flagged, and the healthy or consult line follows, when its 0–100 score is above the 98% quantile of the training scores.',
+  'method.sourcesTitle': 'Sources',
+  'method.limitsTitle': 'Limits',
+  'method.limitsBody': 'Under 10 rows or under 2 numeric columns there is no AI score. A page with no column for that domain stays empty and says so. The demonstration cruise is simulated. The starter tables are spaceflight, bed-rest analogue, or terrestrial wearable records, and each one is labeled as such.',
 } as const
 
 export type MessageKey = keyof typeof en

@@ -111,7 +111,17 @@ button, input { font: inherit; color: inherit; }
 }
 .reading small { font-size: 16px; color: var(--color-cyan); }
 
-.clinic { display: flex; flex-direction: column; gap: 12px; }
+.method h3 {
+  margin: 18px 0 6px;
+  font-family: var(--font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 16px;
+}
+.method p { max-width: 72ch; line-height: 1.45; }
+.method-sources { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-direction: column; gap: 8px; }
+.method-sources li { font-size: 13px; line-height: 1.4; }
+.method-sources a { color: var(--color-cyan); word-break: break-all; }
 .clinic-bar { display: flex; flex-wrap: wrap; gap: 8px; }
 .clinic-bar .scenario b { text-transform: none; letter-spacing: 0.02em; font-size: 14px; }
 .clinic-bar .scenario.active { border-color: var(--color-cyan); color: var(--color-cyan); }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Chart } from './components/Chart.jsx'
 import { DiagnosticPage } from './components/DiagnosticPage.jsx'
+import { MethodPage } from './components/MethodPage.jsx'
 import { columnStats, referenceSlice, rollingBaseline, valuesOf } from './lib/baseline.ts'
 import { toCsv } from './lib/csv.js'
 import { evaluate, evaluateImported } from './lib/engine.js'
@@ -25,6 +26,7 @@ const NAV = [
   { id: 'behavior', label: 'nav.behavior' },
   { id: 'nutrition', label: 'nav.nutrition' },
   { id: 'renal', label: 'nav.renal' },
+  { id: 'method', label: 'nav.method' },
 ]
 
 function loadDone() {
@@ -379,6 +381,7 @@ export default function App() {
 
       <main className={section === 'decision' ? 'workspace resettle' : 'workspace metric-page resettle'} key={section}>
         {section === 'diagnostic' && <DiagnosticPage />}
+        {section === 'method' && <MethodPage />}
         {METRIC_SECTIONS.has(section) && (
           <section className="panel metric-sheet" aria-label={t(`nav.${section}`)}>
             <h2>{t(`nav.${section}`)}</h2>
