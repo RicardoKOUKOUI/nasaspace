@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ASTRO-PULSE · 6 slides</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --ink: #e7f2fb;
+        --muted: #8ea6bf;
+        --cyan: #79e4ff;
+        --ready: #5ee0a8;
+        --amber: #f0c14a;
+        --risk: #ff6b81;
+        --line: rgba(126, 176, 214, 0.22);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+        color: var(--ink);
+        background: #071018;
+      }
+      .slide {
+        display: none;
+        min-height: 100dvh;
+        padding: 64px 72px;
+        background:
+          radial-gradient(800px 320px at 0% 0%, rgba(56, 140, 190, 0.18), transparent 55%),
+          #071018;
+      }
+      .slide.on { display: flex; flex-direction: column; justify-content: center; }
+      .kicker {
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--cyan);
+        font-size: 14px;
+        margin: 0 0 12px;
+      }
+      h1 { font-size: 64px; line-height: 0.95; margin: 0 0 18px; font-weight: 600; max-width: 16ch; }
+      .lead { font-size: 24px; max-width: 38ch; color: var(--muted); margin: 0; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 28px; max-width: 980px; }
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 18px 18px 16px;
+        background: rgba(14, 28, 46, 0.8);
+      }
+      .card b { display: block; font-size: 20px; margin-bottom: 6px; }
+      .card p { margin: 0; color: var(--muted); font-size: 16px; }
+      ol { font-size: 22px; line-height: 1.45; max-width: 40ch; }
+      .nav {
+        position: fixed;
+        right: 24px;
+        bottom: 18px;
+        color: var(--muted);
+        font-size: 13px;
+        letter-spacing: 0.08em;
+      }
+      .num { color: var(--amber); }
+    </style>
+  </head>
+  <body>
+    <section class="slide on">
+      <p class="kicker">NASA Space Apps 2026 · The problem</p>
+      <h1>Earth is 20 minutes away.</h1>
+      <p class="lead">On a Mars transit a flight surgeon cannot answer in real time. Radiation, isolation, gravity, and a closed cabin change the body quietly. The crew needs a medical copilot that lives on board.</p>
+    </section>
+    <section class="slide">
+      <p class="kicker">The solution</p>
+      <h1>ASTRO-PULSE</h1>
+      <p class="lead">An offline health console. Four axes, one Mission Readiness score, and a plan the astronaut can start before the link comes back.</p>
+      <div class="grid">
+        <article class="card"><b>Telemetry</b><p>Heart, bone and muscle, radiation, sleep and mood. One cockpit.</p></article>
+        <article class="card"><b>Cross-check</b><p>Combined drifts lower the score before a single alarm would.</p></article>
+        <article class="card"><b>Copilot</b><p>Shelter, ARED, sleep, fluids, breathing, or a crew check-in.</p></article>
+        <article class="card"><b>Demo switch</b><p>Nominal, solar storm, isolation. One click, no network.</p></article>
+      </div>
+    </section>
+    <section class="slide">
+      <p class="kicker">What you will see</p>
+      <h1>Three states. One crew.</h1>
+      <ol>
+        <li>Nominal cruise stays READY.</li>
+        <li>Solar storm: dose spikes, shelter protocol appears.</li>
+        <li>Isolation: sleep, exercise, and bone fall together.</li>
+        <li>The 3-question check changes the plan on the spot.</li>
+      </ol>
+    </section>
+    <section class="slide">
+      <p class="kicker">NASA evidence</p>
+      <h1>Set-points, not a black box.</h1>
+      <div class="grid">
+        <article class="card"><b>1.84 mSv / day</b><p>MSL RAD cruise dose equivalent. Zeitlin et al., Science 2013.</p></article>
+        <article class="card"><b>1–1.5% bone / month</b><p>NASA Human Research Program. We use 1.2% as the cruise set-point.</p></article>
+        <article class="card"><b>ARED, 60 min</b><p>Resistive exercise is the countermeasure when loading disappears.</p></article>
+        <article class="card"><b>8-hour sleep</b><p>The allotment NASA protects. The fatigue case is that window lost.</p></article>
+      </div>
+      <p class="lead" style="margin-top: 22px; font-size: 18px;">The 30-sol record is synthetic and labeled as such, so the console still runs with the link down. Not a medical device.</p>
+    </section>
+    <section class="slide">
+      <p class="kicker">Earth impact</p>
+      <h1>Same engine, no signal.</h1>
+      <p class="lead">A clinic that cannot reach a physician has the same constraint as this crew. The offline score and the short action list transfer to rural health posts, including in Benin, and to polar or humanitarian teams.</p>
+    </section>
+    <section class="slide">
+      <p class="kicker">Team</p>
+      <h1>Built to run without Earth.</h1>
+      <div class="grid">
+        <article class="card"><b>Data and scoring</b><p>[Name]</p></article>
+        <article class="card"><b>Cockpit</b><p>[Name]</p></article>
+        <article class="card"><b>Submission</b><p>[Name]</p></article>
+        <article class="card"><b>Demo video</b><p>[Name] · 2 minutes, English</p></article>
+      </div>
+    </section>
+    <div class="nav"><span class="num" id="count">1 / 6</span> · arrows or click</div>
+    <script>
+      const slides = [...document.querySelectorAll('.slide')]
+      let index = 0
+      const count = document.getElementById('count')
+      function show(next) {
+        index = (next + slides.length) % slides.length
+        slides.forEach((slide, i) => slide.classList.toggle('on', i === index))
+        count.textContent = `${index + 1} / ${slides.length}`
+      }
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowRight' || event.key === ' ') show(index + 1)
+        if (event.key === 'ArrowLeft') show(index - 1)
+      })
+      document.addEventListener('click', (event) => {
+        show(event.clientX > window.innerWidth / 2 ? index + 1 : index - 1)
+      })
+    </script>
+  </body>
+</html>
