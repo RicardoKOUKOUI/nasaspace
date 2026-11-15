@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { isolationScores, ISOLATION_SEED, ISOLATION_SUBSAMPLE, ISOLATION_TREES, trainIsolationForest } from './isolationForest.ts'
 import { en } from '../i18n/en.ts'
-import { FOREST_MIN_ROWS, scoreForest } from '../lib/forest.ts'
+import { CRUISE_MEASURES, cruiseRecords, FOREST_MIN_ROWS, scoreForest } from '../lib/forest.ts'
+import { generateMission } from '../lib/telemetry.js'
 
 describe('isolation forest', () => {
   it('scores an obvious outlier above the mean of the normal points', () => {
@@ -45,5 +46,20 @@ describe('isolation forest', () => {
     }))
     expect(scoreForest(oneColumn, measures.slice(0, 1)).ready).toBe(false)
     expect(en['forest.insufficient']).toBe('Not enough data for the model. Clinical rules only.')
+  })
+
+  it('trains simulated scenarios on the whole Nominal series and flags above the 98% quantile', () => {
+    const nominal = cruiseRecords(generateMission('nominal').days)
+    const scored = (id: 'nominal' | 'storm' | 'fatigue') =>
+      scoreForest(cruiseRecords(generateMission(id).days), CRUISE_MEASURES, { trainOn: nominal })
+    const healthy = scored('nominal')
+    const storm = scored('storm')
+    const fatigue = scored('fatigue')
+    expect(healthy.referenceSols).toBe(30)
+    expect(healthy.referenceKind).toBe('nominal')
+    expect(healthy.perSol.at(-1)?.flagged).toBe(false)
+    expect(storm.perSol.at(-1)?.flagged).toBe(true)
+    expect(fatigue.flaggedSols).toBeGreaterThan(0)
+    expect(storm.threshold).toBe(healthy.threshold)
   })
 })

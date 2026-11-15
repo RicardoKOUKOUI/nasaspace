@@ -40,8 +40,10 @@ export type ForestReport = {
   series: number[]
   perSol: ForestSol[]
   referenceSols: number
-  /** `pre` when the file has a PRE phase; otherwise the opening sols. */
-  referenceKind: 'pre' | 'first'
+  /** `pre` for a PRE phase, `first` for the opening sols, `nominal` for a whole Nominal scenario. */
+  referenceKind: 'pre' | 'first' | 'nominal'
+  /** 98% quantile of the training scores, on the 0–100 scale. Null when the model does not run. */
+  threshold: number | null
 }
 
 export const CRUISE_MEASURES: MeasureMeta[] = [
@@ -159,18 +161,23 @@ function topDrivers(day: DayRecord, measures: MeasureMeta[], stats: { mean: numb
 }
 
 /**
- * Z-score the numeric columns on the reference (PRE / pre-flight, else the
- * first 7 sols), train there, and score every loaded sol. Pass `trainOn` to
- * score a simulated scenario against the Nominal reference. Fewer than 10
- * rows, or fewer than 2 numeric columns, returns no score.
+ * Z-score the numeric columns on the reference and score every loaded sol.
+ * A loaded file uses PRE / pre-flight when present, otherwise its first 7
+ * sols. Pass `trainOn` for a simulated scenario: the whole Nominal series is
+ * the reference. A sol is flagged when its 0–100 score is above the 98%
+ * quantile of the training scores. Fewer than 10 rows, or fewer than 2
+ * numeric columns, returns no score.
  */
 export function scoreForest(
   days: DayRecord[],
   measures: MeasureMeta[],
   options: { trainOn?: DayRecord[] } = {},
 ): ForestReport {
+  const wholeNominal = options.trainOn != null
   const source = options.trainOn ?? days
-  const { rows: reference, kind } = forestReference(source)
+  const { rows: reference, kind } = wholeNominal
+    ? { rows: source, kind: 'nominal' as const }
+    : forestReference(source)
   const empty: ForestReport = {
     anomaly: null,
     ready: false,
@@ -181,6 +188,7 @@ export function scoreForest(
     perSol: [],
     referenceSols: reference.length,
     referenceKind: kind,
+    threshold: null,
   }
   const selected = presentMeasures(reference, measures)
   if (days.length < FOREST_MIN_ROWS || selected.length < FOREST_MIN_VARIABLES || reference.length === 0) return empty
@@ -220,5 +228,6 @@ export function scoreForest(
     perSol,
     referenceSols: reference.length,
     referenceKind: kind,
+    threshold,
   }
 }

@@ -9,7 +9,7 @@ import { daysForSubject, parseImport } from './lib/import.ts'
 import { DEFAULT_METRIC, METRICS } from './lib/metrics.js'
 import { dashboardDomains, mergeDashboard } from './lib/domainView.ts'
 import { feelingModels, metricReadings } from './lib/selfReport.ts'
-import { HEALTH_CUTOFF_NAME, healthDecision, localWatchStream } from './lib/watch.ts'
+import { localWatchStream } from './lib/watch.ts'
 import { STARTERS } from './lib/starters.ts'
 import { COMMS_DELAY_MIN, generateMission, SCENARIOS } from './lib/telemetry.js'
 import { t } from './i18n/index.ts'
@@ -395,12 +395,12 @@ export default function App() {
           <h2>Décision</h2>
           {forest?.ready && forest.anomaly != null ? (
             <div className="score-block">
-              <em className={healthDecision(forest.anomaly) === 'à consulter' ? 'status-risk' : 'status-ready'}>{forest.anomaly}%</em>
-              <div className={healthDecision(forest.anomaly) === 'à consulter' ? 'status-risk' : 'status-ready'} style={{ fontFamily: 'Barlow Condensed, sans-serif', letterSpacing: '0.16em', marginTop: 4 }}>
-                {healthDecision(forest.anomaly)}
+              <em className={forest.perSol.at(-1)?.flagged ? 'status-risk' : 'status-ready'}>{forest.anomaly}%</em>
+              <div className={forest.perSol.at(-1)?.flagged ? 'status-risk' : 'status-ready'} style={{ fontFamily: 'Barlow Condensed, sans-serif', letterSpacing: '0.16em', marginTop: 4 }}>
+                {forest.perSol.at(-1)?.flagged ? 'à consulter' : 'en bonne santé'}
               </div>
               <p>
-                {HEALTH_CUTOFF_NAME}. en bonne santé sous 40, à consulter à partir de 40.
+                Flagged above {Number(forest.threshold).toFixed(1)}. 98% quantile of the training scores.
               </p>
               <p className="hint">{t('forest.provenance', { n: forest.referenceSols, dataset: datasetLabel })}</p>
               {forest.drivers.length > 0 && (
