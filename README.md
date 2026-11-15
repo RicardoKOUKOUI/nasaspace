@@ -20,6 +20,8 @@ Open the URL Vite prints (http://localhost:5173).
 
 Demo keys: `1` nominal cruise, `2` solar storm, `3` isolation / fatigue and bone loss. The three-question self-check updates the score immediately. Mark a countermeasure done to show on-board validation.
 
+Import a CSV or JSON from the trend panel, or open a starter file shipped in `public/starters/` (small public NASA tables). Keys `1` `2` `3` return to the simulated record. The clinical score still comes from `evaluate()` and stays blank when the file has none of its columns. Imported rows train an in-browser isolation forest on the first sols of the selected subject. The demo forest remains `data/model_scores.json`.
+
 ```bash
 npm run check   # regenerates data/ and checks the three scenarios
 npm run build   # static bundle in dist/

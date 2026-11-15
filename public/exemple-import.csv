@@ -1,0 +1,4 @@
+# exemple de format, pas un dossier astronaute
+scenario,sol,day,hr_bpm,hrv_ms,sbp_mmhg,dbp_mmhg,ared_min,bmd_pct_preflight,dose_msv,cum_dose_msv,crp_mg_l,sleep_h,mood_1_5,focus_1_5,fatigue_1_5
+format-example,155,1,57,62,117,74,65,99.96,1.87,1.87,0.57,7.3,4,4,2
+format-example,156,2,58,65,116,73,68,99.92,1.91,3.78,0.6,7.3,4,4,2
