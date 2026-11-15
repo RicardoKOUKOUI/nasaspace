@@ -6,7 +6,7 @@ import { evaluate, evaluateImported } from './lib/engine.js'
 import { scoreForest } from './lib/forest.ts'
 import { daysForSubject, parseImport } from './lib/import.ts'
 import { DEFAULT_METRIC, METRICS } from './lib/metrics.js'
-import { dashboardDomains } from './lib/domainView.ts'
+import { dashboardDomains, mergeDashboard } from './lib/domainView.ts'
 import { STARTERS } from './lib/starters.ts'
 import { COMMS_DELAY_MIN, generateMission, SCENARIOS } from './lib/telemetry.js'
 import modelReport from '../data/model_scores.json'
@@ -29,12 +29,6 @@ function formatMeasure(value) {
   return String(Math.round(value * 1000) / 1000)
 }
 
-function toneOf(score) {
-  if (score >= 80) return 'ready'
-  if (score >= 60) return 'degraded'
-  return 'risk'
-}
-
 function viewOf(measure, index) {
   const known = METRICS.find((item) => item.id === measure.key)
   if (known) return known
@@ -53,6 +47,7 @@ export default function App() {
   const [done, setDone] = useState(loadDone)
   const [clock, setClock] = useState(6 * 3600 + 12 * 60)
   const [mode, setMode] = useState('demo')
+  const [overview, setOverview] = useState(() => dashboardDomains([], []))
   const [bundle, setBundle] = useState(null)
   const [subject, setSubject] = useState('')
   const [notice, setNotice] = useState('')
@@ -98,13 +93,37 @@ export default function App() {
     [showingDemo, importedDays, bundle],
   )
   const forest = showingDemo ? demoForest : importForest
-  const metrics = showingDemo ? METRICS : (bundle?.measures ?? []).map(viewOf)
+  const metrics = showingDemo
+    ? METRICS.filter((item) => !['dose', 'aredMin', 'bmd', 'crp'].includes(item.id))
+    : (bundle?.measures ?? []).map(viewOf)
   const metric = metrics.find((item) => item.id === metricId) ?? metrics[0] ?? METRICS[0]
   const hasSelf = showingDemo || ['mood', 'focus', 'fatigue'].some((key) => typeof today[key] === 'number')
 
   useEffect(() => {
     const id = setInterval(() => setClock((value) => value + 1), 1000)
     return () => clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    let cancel = false
+    async function loadOverview() {
+      const views = []
+      for (const starter of STARTERS) {
+        try {
+          const response = await fetch(`/starters/${starter.file}`)
+          if (!response.ok) continue
+          const parsed = parseImport(await response.text(), starter.file)
+          const subject = parsed.subjects[0]
+          if (!parsed.ok || !subject) continue
+          views.push(dashboardDomains(parsed.measures, daysForSubject(parsed.days, subject)))
+        } catch {
+          // A missing starter leaves that category blank.
+        }
+      }
+      if (!cancel && views.length) setOverview(mergeDashboard(views))
+    }
+    loadOverview()
+    return () => { cancel = true }
   }, [])
 
   useEffect(() => {
@@ -228,7 +247,7 @@ export default function App() {
         .sort((a, b) => b.anomaly - a.anomaly)
         .slice(0, 3)
     : []
-  const domainAxes = !showingDemo && bundle ? dashboardDomains(bundle.measures, days) : []
+  const domainAxes = !showingDemo && bundle ? dashboardDomains(bundle.measures, days) : overview
   const readout = report.readout.length
     ? report.readout
     : (bundle?.measures ?? []).slice(0, 6).map((measure) => {
@@ -240,6 +259,9 @@ export default function App() {
           tone: 'ready',
         }
       })
+  const visibleReadout = showingDemo
+    ? readout.filter((cell) => !['ARED', 'Dose', 'Cumul.', 'BMD', 'CRP'].includes(cell.label))
+    : readout
 
   return (
     <div className="app">
@@ -306,19 +328,7 @@ export default function App() {
               </p>
             ) : null}
           </div>
-          {showingDemo && report.axes.map((axis) => (
-            <div className="axis" key={axis.id}>
-              <div className="axis-top">
-                <span>{axis.label}</span>
-                <b className={`status-${toneOf(axis.score)}`}>{axis.score}</b>
-              </div>
-              <div className={`bar ${toneOf(axis.score)}`}>
-                <i style={{ width: `${axis.score}%` }} />
-              </div>
-              <p>{axis.detail}</p>
-            </div>
-          ))}
-          {!showingDemo && domainAxes.map((axis) => (
+          {domainAxes.map((axis) => (
             <div className="axis" key={axis.id}>
               <div className="axis-top">
                 <span>{axis.label}</span>
@@ -326,10 +336,7 @@ export default function App() {
               <p>{axis.detail}</p>
             </div>
           ))}
-          {!showingDemo && domainAxes.length > 0 && (
-            <p className="hint">Six measured categories. Bone, radiation, environment, and one-session muscle stay off this screen.</p>
-          )}
-          {!showingDemo && domainAxes.length === 0 && (
+          {domainAxes.length === 0 && (
             <p className="hint">No heart, sensorimotor, immune, nutrition, renal, or behavior series in this file.</p>
           )}
         </section>
@@ -418,7 +425,7 @@ export default function App() {
             </p>
           )}
           <div className="readout">
-            {readout.map((cell) => (
+            {visibleReadout.map((cell) => (
               <article key={cell.label} className={cell.tone}>
                 <span>{cell.label}</span>
                 <strong>{cell.value}</strong>
@@ -446,8 +453,8 @@ export default function App() {
           )}
           {showingDemo && !report.unmeasured && report.alerts.length === 0 && (
             <div className="alert calm">
-              <b>No cross-factor alert</b>
-              <p>The four axes are inside the cruise set-points. Continue the daily plan.</p>
+              <b>Six measured categories</b>
+              <p>Cardiovasculaire, Neurologie, Immunité, Psychologie, Nutrition, Santé rénale.</p>
             </div>
           )}
           {report.alerts.slice(0, 3).map((alert) => (
@@ -456,7 +463,7 @@ export default function App() {
               <p>{alert.detail}</p>
             </div>
           ))}
-          {report.protocols.map((protocol) => {
+          {(showingDemo && scenario === 'nominal' ? [] : report.protocols).map((protocol) => {
             const key = `${showingDemo ? scenario : `import:${subject}`}:${protocol.id}`
             const checked = Boolean(done[key])
             return (
@@ -503,7 +510,7 @@ export default function App() {
       </main>
 
       <footer className="foot">
-        <span>Simulated 30-sol record · MSL RAD 1.84 mSv/day (Zeitlin 2013) · HRP bone 1–1.5%/month · ARED 60 min · sleep 8 h · Not a medical device.</span>
+        <span>Public starter tables for the six measured categories. Not a medical device.</span>
       </footer>
     </div>
   )

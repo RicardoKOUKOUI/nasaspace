@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { parseAppleHealth } from './earthDemo.ts'
 import { describe, expect, it } from 'vitest'
-import { dashboardDomains } from './domainView.ts'
+import { dashboardDomains, mergeDashboard } from './domainView.ts'
 import { evaluate, evaluateImported } from './engine.js'
 import { FOREST_CONTAMINATION, FOREST_TREES, scoreForest } from './forest.ts'
 import { parseImport, parseNumber } from './import.ts'
@@ -260,6 +260,19 @@ describe('scores', () => {
     const behavior = dashboardDomains(wellness.measures, person)
     expect(behavior.find((item) => item.id === 'behavior')?.detail).toContain('Sleep')
     expect(behavior.find((item) => item.id === 'behavior')?.detail).not.toContain('Focus')
+    const landing = mergeDashboard([heartView, neuroView, behavior])
+    expect(landing.map((item) => item.label)).toEqual([
+      'Cardiovasculaire',
+      'Neurologie',
+      'Immunité',
+      'Psychologie',
+      'Nutrition',
+      'Santé rénale',
+    ])
+    expect(landing.find((item) => item.id === 'cardio')?.detail).toContain('Heart rate')
+    expect(landing.find((item) => item.id === 'neuro')?.detail).toContain('Average time')
+    expect(landing.find((item) => item.id === 'behavior')?.detail).toContain('Sleep')
+    expect(landing.some((item) => /bone|radiation|ARED|mSv/i.test(item.label))).toBe(false)
   })
 
   it('trains the domains that have a public series and scores the later sols', () => {

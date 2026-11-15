@@ -55,6 +55,32 @@ export function dashboardDomains(measures: MeasureMeta[], days: DayRecord[]): Da
   })
 }
 
+/** One row per category. A category with no number in any view stays blank. */
+export function mergeDashboard(views: DashboardDomain[][]): DashboardDomain[] {
+  const parts = new Map<(typeof ORDER)[number], string[]>()
+  for (const view of views) {
+    for (const row of view) {
+      if (!row.detail || row.detail === '—') continue
+      const list = parts.get(row.id) ?? []
+      for (const piece of row.detail.split(' · ')) {
+        if (piece && !list.includes(piece)) list.push(piece)
+      }
+      parts.set(row.id, list)
+    }
+  }
+  return ORDER.map((id) => {
+    const list = parts.get(id)
+    if (!list?.length) return { id, label: LABELS[id], detail: '—' }
+    const shown = list.slice(0, 4)
+    const extra = list.length - shown.length
+    return {
+      id,
+      label: LABELS[id],
+      detail: extra > 0 ? `${shown.join(' · ')} · +${extra}` : shown.join(' · '),
+    }
+  })
+}
+
 function latestNumber(days: DayRecord[], key: string): number | null {
   for (let index = days.length - 1; index >= 0; index -= 1) {
     const value = days[index]?.values[key]

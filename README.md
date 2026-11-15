@@ -30,7 +30,7 @@ npm run build            # static bundle in dist/
 
 ## What the console does
 
-1. **Telemetry, four NASA axes.** Cardiovascular (resting heart rate, HRV, blood pressure), bone and muscle (ARED minutes, bone-density proxy), radiation and immunity (daily and cumulative dose, CRP proxy), behavior (sleep plus a 3-question self-check).
+1. **Landing screen, six measured categories.** Cardiovasculaire, Neurologie, Immunité, Psychologie, Nutrition, Santé rénale. Bone, radiation, environment, and the one-session muscle tables are not on that screen. The demo score behind keys 1, 2, and 3 still uses the cruise rules in `evaluate()`.
 2. **Cross-factor score.** Each axis is scored against an operational set-point. Combined drifts (particle dose with inflammation, short sleep with low HRV, missed ARED with faster bone loss) subtract a capped penalty. A cross-factor anomaly index measures how far today sits from the cruise baseline.
 3. **Action copilot.** The active rules pick up to three protocols: storm shelter, inflammation watch, electrolytes, 4-7-8 breathing, ARED, sleep lock, or a crew check-in. Validated actions stay in local storage.
 4. **Live demo switch.** Nominal, solar storm, and isolation / fatigue rebuild the same 30-sol window so a presentation can show the response in one click.
