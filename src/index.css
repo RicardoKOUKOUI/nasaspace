@@ -230,6 +230,18 @@ button, input { font: inherit; color: inherit; }
   font-size: 18px;
   letter-spacing: 0.04em;
 }
+.lang-toggle { display: flex; gap: 4px; flex: none; }
+.lang-toggle button {
+  border: 1px solid rgba(126, 176, 214, 0.35);
+  background: transparent;
+  color: var(--color-muted);
+  border-radius: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.lang-toggle button.on { color: var(--color-cyan); border-color: var(--color-cyan); }
 
 .scenarios { display: flex; gap: 8px; }
 
