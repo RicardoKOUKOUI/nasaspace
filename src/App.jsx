@@ -15,6 +15,15 @@ import modelReport from '../data/model_scores.json'
 
 const STATUS_LABEL = { ready: 'READY', degraded: 'DEGRADED', risk: 'AT RISK', unmeasured: 'NOT MEASURED' }
 const PALETTE = ['#79e4ff', '#7dcec8', '#f0c14a', '#c3b4ff', '#ffb086', '#9fd0ff', '#ff8fa3', '#5ee0a8']
+const NAV = [
+  { id: 'decision', label: 'Décision' },
+  { id: 'cardio', label: 'Cardiovasculaire' },
+  { id: 'neuro', label: 'Neurologie' },
+  { id: 'immune', label: 'Immunité' },
+  { id: 'behavior', label: 'Psychologie' },
+  { id: 'nutrition', label: 'Nutrition' },
+  { id: 'renal', label: 'Santé rénale' },
+]
 
 function loadDone() {
   try {
@@ -52,6 +61,7 @@ export default function App() {
   const [overview, setOverview] = useState(() => dashboardDomains([], []))
   const [landingModels, setLandingModels] = useState([])
   const [watchTick, setWatchTick] = useState(0)
+  const [section, setSection] = useState('decision')
   const [bundle, setBundle] = useState(null)
   const [subject, setSubject] = useState('')
   const [notice, setNotice] = useState('')
@@ -297,6 +307,19 @@ export default function App() {
 
   return (
     <div className="app">
+      <nav className="side-nav" aria-label="Sections">
+        {NAV.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={section === item.id ? 'nav-item on' : 'nav-item'}
+            aria-current={section === item.id ? 'page' : undefined}
+            onClick={() => setSection(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
       <header className="topbar">
         <div className="brand">
           <div className="brand-mark" aria-hidden="true">
@@ -375,17 +398,25 @@ export default function App() {
               )}
             </div>
           )}
-          {domainAxes.map((axis) => {
+          {domainAxes.filter((axis) => section === 'decision' || axis.id === section).map((axis) => {
+            const model = feeling.find((item) => item.id === axis.id)
             const fromWatch = axis.id === 'cardio' && watchPayload
             const detail = fromWatch
               ? `Heart rate ${watchPayload.hr} bpm · Systolic ${watchPayload.sbp} mmHg · Diastolic ${watchPayload.dbp} mmHg`
               : axis.detail
+            const band = model?.interval
             return (
               <div className="axis" key={axis.id}>
                 <div className="axis-top">
                   <span>{axis.label}</span>
                 </div>
                 <p>{detail}</p>
+                {band ? (
+                  <p className="hint">
+                    Bas {formatMeasure(band.low)} · Typique {formatMeasure(band.typical)} · Haut {formatMeasure(band.high)}
+                    {band.unit ? ` ${band.unit}` : ''} · {band.measure}
+                  </p>
+                ) : null}
                 <p className="hint">{fromWatch ? 'Montre · HR, SBP, DBP' : 'Dernière ligne d’entraînement'}</p>
               </div>
             )
