@@ -7,6 +7,7 @@ import { FOREST_CONTAMINATION, FOREST_TREES, scoreForest } from './forest.ts'
 import { parseImport, parseNumber } from './import.ts'
 import { STARTERS } from './starters.ts'
 import { clampFeeling, scoreFeeling, seriesInterval } from './selfReport.ts'
+import { applyWatch, HEALTH_CUTOFF, healthDecision, localWatchStream, scoreWatch } from './watch.ts'
 import { trainSubject } from './train.ts'
 import { generateMission } from './telemetry.js'
 
@@ -313,6 +314,29 @@ describe('scores', () => {
     const typical = scoreFeeling(days, heart.measures, 'cardio', interval!.typical)
     const high = scoreFeeling(days, heart.measures, 'cardio', interval!.high)
     expect(high.anomaly).not.toBe(typical.anomaly)
+  })
+
+  it('scores a local watch packet and applies the seuil 40 decision', () => {
+    const heart = parseImport(read('agbresa-cardio.csv'), 'agbresa-cardio.csv')
+    const days = heart.days.filter((day) => day.subject === 'V')
+    const stream = localWatchStream(days)
+    expect(stream.length).toBe(2)
+    expect(stream.every((sample) => sample.source === 'local-watch-shape')).toBe(true)
+    const resting = scoreWatch(days, heart.measures, stream[0]!)
+    const latest = scoreWatch(days, heart.measures, stream[1]!)
+    expect(resting.anomaly).toBeLessThan(HEALTH_CUTOFF)
+    expect(resting.decision).toBe('en bonne santé')
+    expect(latest.anomaly).toBeGreaterThanOrEqual(HEALTH_CUTOFF)
+    expect(latest.decision).toBe('à consulter')
+    expect(healthDecision(39)).toBe('en bonne santé')
+    expect(healthDecision(40)).toBe('à consulter')
+    const neuro = parseImport(read('brsmfmt.csv'), 'brsmfmt.csv')
+    const neuroDays = neuro.days.filter((day) => day.subject === '224')
+    const kept = neuroDays[neuroDays.length - 1]?.values.avgTime
+    const filled = applyWatch(neuroDays, stream[0]!)
+    expect(filled[filled.length - 1]?.values.hr).toBe(stream[0]!.hr)
+    expect(filled[filled.length - 1]?.values.avgTime).toBe(kept)
+    expect(filled[0]).toBe(neuroDays[0])
   })
 
   it('trains the domains that have a public series and scores the later sols', () => {

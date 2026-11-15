@@ -7,21 +7,14 @@ import { scoreForest } from './lib/forest.ts'
 import { daysForSubject, parseImport } from './lib/import.ts'
 import { DEFAULT_METRIC, METRICS } from './lib/metrics.js'
 import { dashboardDomains, mergeDashboard } from './lib/domainView.ts'
-import { clampFeeling, feelingModels, scoreFeeling } from './lib/selfReport.ts'
+import { feelingModels } from './lib/selfReport.ts'
+import { HEALTH_CUTOFF_NAME, localWatchStream, scoreWatch } from './lib/watch.ts'
 import { STARTERS } from './lib/starters.ts'
 import { COMMS_DELAY_MIN, generateMission, SCENARIOS } from './lib/telemetry.js'
 import modelReport from '../data/model_scores.json'
 
 const STATUS_LABEL = { ready: 'READY', degraded: 'DEGRADED', risk: 'AT RISK', unmeasured: 'NOT MEASURED' }
 const PALETTE = ['#79e4ff', '#7dcec8', '#f0c14a', '#c3b4ff', '#ffb086', '#9fd0ff', '#ff8fa3', '#5ee0a8']
-
-function loadFeel() {
-  try {
-    return JSON.parse(localStorage.getItem('astropulse-feel') || '{}')
-  } catch {
-    return {}
-  }
-}
 
 function loadDone() {
   try {
@@ -58,7 +51,7 @@ export default function App() {
   const [mode, setMode] = useState('demo')
   const [overview, setOverview] = useState(() => dashboardDomains([], []))
   const [landingModels, setLandingModels] = useState([])
-  const [feel, setFeel] = useState(loadFeel)
+  const [watchTick, setWatchTick] = useState(0)
   const [bundle, setBundle] = useState(null)
   const [subject, setSubject] = useState('')
   const [notice, setNotice] = useState('')
@@ -180,18 +173,6 @@ export default function App() {
     setScenario(id)
   }
 
-  function setFeeling(id, value) {
-    setFeel((current) => {
-      const next = { ...current, [id]: value }
-      try {
-        localStorage.setItem('astropulse-feel', JSON.stringify(next))
-      } catch {
-        /* private mode */
-      }
-      return next
-    })
-  }
-
   function setSelf(field, value) {
     if (!showingDemo) {
       setImportSelf((current) => ({ ...current, [field]: value }))
@@ -283,18 +264,21 @@ export default function App() {
     [showingDemo, bundle, importedDays],
   )
   const feeling = showingDemo ? landingModels : importedModels
-  const feelingScores = useMemo(() => {
-    const scores = {}
-    for (const model of feeling) {
-      scores[model.id] = scoreFeeling(
-        model.days,
-        model.measures,
-        model.id,
-        clampFeeling(model.interval, feel[model.id]),
-      )
-    }
-    return scores
-  }, [feeling, feel])
+  const cardioModel = feeling.find((item) => item.id === 'cardio') ?? null
+  const watchStream = useMemo(
+    () => (cardioModel ? localWatchStream(cardioModel.days) : []),
+    [cardioModel],
+  )
+  const watchPayload = watchStream[watchTick % Math.max(watchStream.length, 1)] ?? null
+  const watchScore = useMemo(
+    () => (cardioModel && watchPayload ? scoreWatch(cardioModel.days, cardioModel.measures, watchPayload) : null),
+    [cardioModel, watchPayload],
+  )
+  useEffect(() => {
+    if (watchStream.length < 2) return undefined
+    const id = setInterval(() => setWatchTick((value) => value + 1), 5000)
+    return () => clearInterval(id)
+  }, [watchStream.length])
   const domainAxes = !showingDemo && bundle ? dashboardDomains(bundle.measures, days) : overview
   const readout = report.readout.length
     ? report.readout
@@ -376,33 +360,33 @@ export default function App() {
               </p>
             ) : null}
           </div>
+          {watchPayload && watchScore?.anomaly != null && (
+            <div className="axis">
+              <div className="axis-top">
+                <span>{watchScore.anomaly}%</span>
+                <b>{watchScore.decision}</b>
+              </div>
+              <p>
+                {HEALTH_CUTOFF_NAME}. en bonne santé sous 40, à consulter à partir de 40.
+                Signal local en forme de montre : HR {watchPayload.hr} bpm · SBP {watchPayload.sbp} · DBP {watchPayload.dbp}. Aucun appareil Bluetooth n'est appairé.
+              </p>
+              {watchScore.drivers.length > 0 && (
+                <p className="hint">{watchScore.drivers.map((driver) => `${driver.label || driver.feature} ${driver.z}`).join(' · ')}</p>
+              )}
+            </div>
+          )}
           {domainAxes.map((axis) => {
-            const model = feeling.find((item) => item.id === axis.id)
-            const score = model ? feelingScores[model.id] : null
-            const value = model ? clampFeeling(model.interval, feel[model.id]) : null
+            const fromWatch = axis.id === 'cardio' && watchPayload
+            const detail = fromWatch
+              ? `Heart rate ${watchPayload.hr} bpm · Systolic ${watchPayload.sbp} mmHg · Diastolic ${watchPayload.dbp} mmHg`
+              : axis.detail
             return (
               <div className="axis" key={axis.id}>
                 <div className="axis-top">
                   <span>{axis.label}</span>
-                  {score?.anomaly != null ? <b>{score.anomaly}</b> : null}
                 </div>
-                <p>{axis.detail}</p>
-                {model && value != null ? (
-                  <FeelingSlider
-                    label={model.interval.measure}
-                    unit={model.interval.unit}
-                    low={model.interval.low}
-                    typical={model.interval.typical}
-                    high={model.interval.high}
-                    value={value}
-                    onChange={(next) => setFeeling(model.id, next)}
-                  />
-                ) : null}
-                {score?.drivers?.length ? (
-                  <p className="hint">
-                    {score.drivers.map((driver) => `${driver.label || driver.feature} ${driver.z}`).join(' · ')}
-                  </p>
-                ) : null}
+                <p>{detail}</p>
+                <p className="hint">{fromWatch ? 'Montre · HR, SBP, DBP' : 'Dernière ligne d’entraînement'}</p>
               </div>
             )
           })}
@@ -583,41 +567,6 @@ export default function App() {
         <span>Public starter tables for the six measured categories. Not a medical device.</span>
       </footer>
     </div>
-  )
-}
-
-function formatBand(value) {
-  const abs = Math.abs(value)
-  if (abs >= 100) return String(Math.round(value))
-  if (abs >= 10) return String(Math.round(value * 10) / 10)
-  return String(Math.round(value * 1000) / 1000)
-}
-
-function FeelingSlider({ label, unit, low, typical, high, value, onChange }) {
-  const span = high - low
-  const step = span > 0 ? span / 40 : 1
-  return (
-    <label className="slider">
-      <span className="slider-top">
-        <span>{label}{unit ? ` (${unit})` : ''}</span>
-        <b>{formatBand(value)}</b>
-      </span>
-      <input
-        type="range"
-        min={low}
-        max={high}
-        step={step}
-        value={value}
-        aria-label={label}
-        disabled={span === 0}
-        onChange={(event) => onChange(Number(event.target.value))}
-      />
-      <span className="slider-scale">
-        <i>Low {formatBand(low)}</i>
-        <i>Typical {formatBand(typical)}</i>
-        <i>High {formatBand(high)}</i>
-      </span>
-    </label>
   )
 }
 
