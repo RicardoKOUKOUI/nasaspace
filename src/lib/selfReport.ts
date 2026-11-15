@@ -99,6 +99,42 @@ export function seriesInterval(days: DayRecord[], measures: MeasureMeta[], id: M
   }
 }
 
+export function metricReadings(days: DayRecord[], measures: MeasureMeta[], id: MetricId): MetricReading[] {
+  const readings: MetricReading[] = []
+  for (const measure of measuresFor(measures, id)) {
+    let value: number | null = null
+    for (let index = days.length - 1; index >= 0; index -= 1) {
+      const current = days[index]?.values[measure.key]
+      if (typeof current === 'number' && Number.isFinite(current)) {
+        value = current
+        break
+      }
+    }
+    const band = bandOf(trainingValues(days, measure.key))
+    if (value == null || !band) continue
+    readings.push({
+      key: measure.key,
+      label: measure.label,
+      unit: measure.unit ?? '',
+      value,
+      low: band.low,
+      typical: band.typical,
+      high: band.high,
+    })
+  }
+  return readings
+}
+
+export type MetricReading = {
+  key: string
+  label: string
+  unit: string
+  value: number
+  low: number
+  typical: number
+  high: number
+}
+
 export function feelingModels(measures: MeasureMeta[], days: DayRecord[]): FeelingModel[] {
   if (days.length === 0) return []
   const models: FeelingModel[] = []

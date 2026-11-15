@@ -7,13 +7,12 @@ import { scoreForest } from './lib/forest.ts'
 import { daysForSubject, parseImport } from './lib/import.ts'
 import { DEFAULT_METRIC, METRICS } from './lib/metrics.js'
 import { dashboardDomains, mergeDashboard } from './lib/domainView.ts'
-import { feelingModels } from './lib/selfReport.ts'
+import { feelingModels, metricReadings } from './lib/selfReport.ts'
 import { HEALTH_CUTOFF_NAME, localWatchStream, scoreWatch } from './lib/watch.ts'
 import { STARTERS } from './lib/starters.ts'
 import { COMMS_DELAY_MIN, generateMission, SCENARIOS } from './lib/telemetry.js'
 import modelReport from '../data/model_scores.json'
 
-const STATUS_LABEL = { ready: 'READY', degraded: 'DEGRADED', risk: 'AT RISK', unmeasured: 'NOT MEASURED' }
 const PALETTE = ['#79e4ff', '#7dcec8', '#f0c14a', '#c3b4ff', '#ffb086', '#9fd0ff', '#ff8fa3', '#5ee0a8']
 const NAV = [
   { id: 'decision', label: 'Décision' },
@@ -61,7 +60,10 @@ export default function App() {
   const [overview, setOverview] = useState(() => dashboardDomains([], []))
   const [landingModels, setLandingModels] = useState([])
   const [watchTick, setWatchTick] = useState(0)
-  const [section, setSection] = useState('decision')
+  const [section, setSection] = useState(() => {
+    const page = new URLSearchParams(window.location.search).get('page')
+    return NAV.some((item) => item.id === page) ? page : 'decision'
+  })
   const [bundle, setBundle] = useState(null)
   const [subject, setSubject] = useState('')
   const [notice, setNotice] = useState('')
@@ -290,6 +292,18 @@ export default function App() {
     return () => clearInterval(id)
   }, [watchStream.length])
   const domainAxes = !showingDemo && bundle ? dashboardDomains(bundle.measures, days) : overview
+  const pageModel = feeling.find((item) => item.id === section) ?? null
+  const pageReadings = pageModel
+    ? metricReadings(pageModel.days, pageModel.measures, pageModel.id)
+        .map((reading) => {
+          if (pageModel.id !== 'cardio' || !watchPayload) return reading
+          if (reading.key === 'hr') return { ...reading, value: watchPayload.hr }
+          if (reading.key === 'sbp') return { ...reading, value: watchPayload.sbp }
+          if (reading.key === 'dbp') return { ...reading, value: watchPayload.dbp }
+          return reading
+        })
+        .filter((reading) => pageModel.id !== 'cardio' || ['hr', 'sbp', 'dbp'].includes(reading.key))
+    : []
   const readout = report.readout.length
     ? report.readout
     : (bundle?.measures ?? []).slice(0, 6).map((measure) => {
@@ -353,76 +367,44 @@ export default function App() {
         </div>
       </header>
 
-      <main className="workspace resettle" key={showingDemo ? scenario : `${subject}:${bundle?.label}`}>
-        <section className="panel" aria-label="Mission readiness">
-          <h2>Mission readiness</h2>
-          <div className="score-block">
-            {report.unmeasured ? (
-              <em className="status-unmeasured">—</em>
-            ) : (
-              <em className={`status-${report.status}`}>{report.score}</em>
-            )}
-            <div className={`status-${report.status}`} style={{ fontFamily: 'Barlow Condensed, sans-serif', letterSpacing: '0.16em', marginTop: 4 }}>
-              {STATUS_LABEL[report.status] || STATUS_LABEL.unmeasured}
+      <main className={section === 'decision' ? 'workspace resettle' : 'workspace metric-page resettle'} key={section}>
+        {section !== 'decision' && (
+          <section className="panel metric-sheet" aria-label={pageModel?.label || section}>
+            <h2>{pageModel?.label}</h2>
+            <p className="hint">{section === 'cardio' ? 'Montre · HR, SBP, DBP. Aucun appareil Bluetooth n’est appairé.' : 'Dernière ligne d’entraînement.'}</p>
+            <div className="reading-grid">
+              {pageReadings.map((reading) => (
+                <article className="reading" key={reading.key}>
+                  <span>{reading.label}</span>
+                  <strong>{formatMeasure(reading.value)}{reading.unit ? <small> {reading.unit}</small> : null}</strong>
+                  <p>Bas {formatMeasure(reading.low)} · Typique {formatMeasure(reading.typical)} · Haut {formatMeasure(reading.high)}{reading.unit ? ` ${reading.unit}` : ''}</p>
+                </article>
+              ))}
             </div>
-            <div className="score-meta">
-              <span>FOREST {forest?.anomaly ?? '—'}</span>
-              <span>ANOMALY {report.anomaly ?? '—'}</span>
-              <span>{report.penalty > 0 ? `CROSS −${report.penalty}` : 'CROSS 0'}</span>
-            </div>
-            <p className="hint">
-              Isolation Forest · {forest?.flaggedSols ?? 0}/{forest?.sols ?? days.length} sols
-              {forest && forest.anomaly >= 40 && forest.drivers.length > 0
-                ? ` · ${forest.drivers.map((item) => item.label || item.feature).join(', ')}`
-                : ''}
-            </p>
-            {!showingDemo && forest?.referenceSols ? (
-              <p className="hint">
-                Reference: {forest.referenceKind === 'pre' ? `PRE_TEST (${forest.referenceSols} sols)` : `first ${forest.referenceSols} sols`} of this subject.
-                Drivers use the rolling mean and SD, or that reference when fewer than two earlier sols exist. Missing cells stay empty.
-              </p>
-            ) : null}
-          </div>
-          {watchPayload && watchScore?.anomaly != null && (
-            <div className="axis">
-              <div className="axis-top">
-                <span>{watchScore.anomaly}%</span>
-                <b>{watchScore.decision}</b>
+          </section>
+        )}
+        {section === 'decision' && (
+        <>
+        <section className="panel" aria-label="Decision">
+          <h2>Décision</h2>
+          {watchPayload && watchScore?.anomaly != null ? (
+            <div className="score-block">
+              <em className={watchScore.decision === 'à consulter' ? 'status-risk' : 'status-ready'}>{watchScore.anomaly}%</em>
+              <div className={watchScore.decision === 'à consulter' ? 'status-risk' : 'status-ready'} style={{ fontFamily: 'Barlow Condensed, sans-serif', letterSpacing: '0.16em', marginTop: 4 }}>
+                {watchScore.decision}
               </div>
               <p>
                 {HEALTH_CUTOFF_NAME}. en bonne santé sous 40, à consulter à partir de 40.
-                Signal local en forme de montre : HR {watchPayload.hr} bpm · SBP {watchPayload.sbp} · DBP {watchPayload.dbp}. Aucun appareil Bluetooth n'est appairé.
+              </p>
+              <p className="hint">
+                Signal local en forme de montre : HR {watchPayload.hr} bpm · SBP {watchPayload.sbp} mmHg · DBP {watchPayload.dbp} mmHg. Aucun appareil Bluetooth n’est appairé.
               </p>
               {watchScore.drivers.length > 0 && (
                 <p className="hint">{watchScore.drivers.map((driver) => `${driver.label || driver.feature} ${driver.z}`).join(' · ')}</p>
               )}
             </div>
-          )}
-          {domainAxes.filter((axis) => section === 'decision' || axis.id === section).map((axis) => {
-            const model = feeling.find((item) => item.id === axis.id)
-            const fromWatch = axis.id === 'cardio' && watchPayload
-            const detail = fromWatch
-              ? `Heart rate ${watchPayload.hr} bpm · Systolic ${watchPayload.sbp} mmHg · Diastolic ${watchPayload.dbp} mmHg`
-              : axis.detail
-            const band = model?.interval
-            return (
-              <div className="axis" key={axis.id}>
-                <div className="axis-top">
-                  <span>{axis.label}</span>
-                </div>
-                <p>{detail}</p>
-                {band ? (
-                  <p className="hint">
-                    Bas {formatMeasure(band.low)} · Typique {formatMeasure(band.typical)} · Haut {formatMeasure(band.high)}
-                    {band.unit ? ` ${band.unit}` : ''} · {band.measure}
-                  </p>
-                ) : null}
-                <p className="hint">{fromWatch ? 'Montre · HR, SBP, DBP' : 'Dernière ligne d’entraînement'}</p>
-              </div>
-            )
-          })}
-          {domainAxes.length === 0 && (
-            <p className="hint">No heart, sensorimotor, immune, nutrition, renal, or behavior series in this file.</p>
+          ) : (
+            <p className="hint">Signal local en cours.</p>
           )}
         </section>
 
@@ -592,6 +574,8 @@ export default function App() {
             </div>
           )}
         </section>
+        </>
+        )}
       </main>
 
       <footer className="foot">

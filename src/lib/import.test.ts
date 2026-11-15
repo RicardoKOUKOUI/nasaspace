@@ -6,7 +6,7 @@ import { evaluate, evaluateImported } from './engine.js'
 import { FOREST_CONTAMINATION, FOREST_TREES, scoreForest } from './forest.ts'
 import { parseImport, parseNumber } from './import.ts'
 import { STARTERS } from './starters.ts'
-import { clampFeeling, scoreFeeling, seriesInterval } from './selfReport.ts'
+import { clampFeeling, metricReadings, scoreFeeling, seriesInterval } from './selfReport.ts'
 import { applyWatch, HEALTH_CUTOFF, healthDecision, localWatchStream, scoreWatch } from './watch.ts'
 import { trainSubject } from './train.ts'
 import { generateMission } from './telemetry.js'
@@ -337,6 +337,29 @@ describe('scores', () => {
     expect(filled[filled.length - 1]?.values.hr).toBe(stream[0]!.hr)
     expect(filled[filled.length - 1]?.values.avgTime).toBe(kept)
     expect(filled[0]).toBe(neuroDays[0])
+  })
+
+  it('reads a measured value and its training interval for each metric page', () => {
+    const files = [
+      ['agbresa-cardio.csv', 'cardio', ['hr', 'sbp', 'dbp']],
+      ['brsmfmt.csv', 'neuro', ['avgTime']],
+      ['brsmvsi.csv', 'immune', ['vca']],
+      ['pmdata-wellness.csv', 'behavior', ['sleep']],
+      ['ap010-nutrition.csv', 'nutrition', ['carbohydrate']],
+      ['brsmrf.csv', 'renal', ['creatinineClearance']],
+    ] as const
+    for (const [file, id, keys] of files) {
+      const parsed = parseImport(read(file), file)
+      const days = parsed.days.filter((day) => day.subject === parsed.subjects[0])
+      const readings = metricReadings(days, parsed.measures, id)
+      expect(readings.length).toBeGreaterThan(0)
+      for (const reading of readings) {
+        expect(typeof reading.value).toBe('number')
+        expect(reading.low).toBeLessThanOrEqual(reading.typical)
+        expect(reading.typical).toBeLessThanOrEqual(reading.high)
+      }
+      for (const key of keys) expect(readings.some((reading) => reading.key === key)).toBe(true)
+    }
   })
 
   it('trains the domains that have a public series and scores the later sols', () => {
