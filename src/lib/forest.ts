@@ -196,9 +196,10 @@ function solDrivers(days: DayRecord[], index: number, measures: MeasureMeta[]): 
 /**
  * Isolation forest (200 trees, contamination 0.02) trained on the person's
  * reference period: PRE_TEST rows when the file has them, otherwise the first
- * 14 sols. Each sol gets an anomaly score and its 3 strongest drivers from
- * the personal rolling baseline (or that reference window when fewer than
- * two earlier sols exist). A missing cell is filled with the reference mean
+ * half of the series (at most 14 sols). Sols after that window are the scored
+ * sols. Each sol gets an anomaly score and its 3 strongest drivers from the
+ * personal rolling baseline (or that reference window when fewer than two
+ * earlier sols exist). A missing cell is filled with the reference mean
  * only inside the matrix. The day record is not rewritten, and a missing
  * measure is not a driver.
  */

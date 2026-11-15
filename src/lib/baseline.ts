@@ -3,10 +3,17 @@ import type { DayRecord, MeasureMeta } from './domains.ts'
 export const REFERENCE_SOLS = 14
 export const ROLLING_SOLS = 7
 
+/** How many opening sols are the reference when the file has no PRE phase. */
+export function unlabeledReferenceCount(length: number): number {
+  if (length <= 1) return length
+  const later = Math.ceil(length / 2)
+  return Math.min(REFERENCE_SOLS, length - later)
+}
+
 export function referenceSlice(days: DayRecord[]): DayRecord[] {
   const pre = days.filter((day) => typeof day.phase === 'string' && /^PRE/i.test(day.phase))
   if (pre.length > 0) return pre
-  return days.slice(0, Math.min(REFERENCE_SOLS, days.length))
+  return days.slice(0, unlabeledReferenceCount(days.length))
 }
 
 export function columnStats(values: number[]): { mean: number; std: number } | null {

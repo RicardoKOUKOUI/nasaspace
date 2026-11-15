@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 import { evaluate, evaluateImported } from './engine.js'
 import { FOREST_CONTAMINATION, FOREST_TREES, scoreForest } from './forest.ts'
 import { parseImport, parseNumber } from './import.ts'
+import { STARTERS } from './starters.ts'
+import { trainSubject } from './train.ts'
 import { generateMission } from './telemetry.js'
 
 function read(name: string): string {
@@ -224,5 +226,26 @@ describe('scores', () => {
     expect(spike?.anomaly).toBeGreaterThanOrEqual(40)
     expect(spike?.drivers[0]?.feature).toBe('creatinineClearance')
     expect(spike?.drivers[0]?.z).toBeGreaterThan(10)
+  })
+
+  it('trains the starter menu on later sols and leaves the short files out', () => {
+    expect(STARTERS.map((item) => item.file).sort()).toEqual([
+      'ap010-nutrition.csv',
+      'brsmacet.csv',
+      'brsmfmt.csv',
+      'brsmfsr.csv',
+      'brsmimmune-cd8.csv',
+      'brsmrf.csv',
+      'brsmvsi.csv',
+    ])
+    const acet = parseImport(read('brsmacet.csv'), 'brsmacet.csv')
+    const days = acet.days.filter((day) => day.subject === 'C1G0001')
+    const trained = trainSubject(days, acet.measures)
+    const spike = trained.later.find((item) => item.sol === 56)
+    expect(trained.referenceKind).toBe('pre')
+    expect(trained.later.every((item) => item.phase !== 'PRE_TEST')).toBe(true)
+    expect(spike?.anomaly).toBeGreaterThanOrEqual(40)
+    expect(spike?.drivers[0]?.feature).toBe('halfLife')
+    expect(spike?.drivers).toHaveLength(3)
   })
 })

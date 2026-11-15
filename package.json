@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "check": "node scripts/check.mjs",
     "test": "vitest run",
+    "train:imported": "node --experimental-strip-types scripts/train-imported.ts",
     "model": "python3 model/train.py"
   },
   "dependencies": {
