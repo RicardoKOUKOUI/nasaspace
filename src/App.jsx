@@ -10,7 +10,7 @@ import { DEFAULT_METRIC, METRICS } from './lib/metrics.js'
 import { dashboardDomains, mergeDashboard } from './lib/domainView.ts'
 import { feelingModels, metricReadings } from './lib/selfReport.ts'
 import { localWatchStream } from './lib/watch.ts'
-import { STARTERS } from './lib/starters.ts'
+import { SOURCE_LABEL, STARTERS, starterForFile } from './lib/starters.ts'
 import { COMMS_DELAY_MIN, generateMission, SCENARIOS } from './lib/telemetry.js'
 import { t } from './i18n/index.ts'
 
@@ -348,7 +348,7 @@ export default function App() {
           </div>
           <div>
             <h1>ASTRO-PULSE</h1>
-            <p>{showingDemo ? `OFFLINE HEALTH OS · ${mission.vehicle.toUpperCase()}` : `IMPORTED · ${(bundle?.label || 'FILE').toUpperCase()}`}</p>
+            <p>{showingDemo ? 'OFFLINE HEALTH OS · SIMULATION DE DÉMONSTRATION' : `IMPORTED · ${(bundle?.label || 'FILE').toUpperCase()}`}</p>
           </div>
         </div>
         <div className="clock">
@@ -459,6 +459,22 @@ export default function App() {
               }}
             />
           </div>
+          {showingDemo ? (
+            <p className="import-note">Simulation de démonstration. Seeded cruise, not a flight record.</p>
+          ) : bundle && (
+            <p className="import-note">
+              {starterForFile(bundle.label) && (
+                <strong className="source-badge">{SOURCE_LABEL[starterForFile(bundle.label).source]}</strong>
+              )}
+              {bundle.days.length} rows · {bundle.subjects.length} subjects
+              {bundle.reference && (
+                <>
+                  {' · '}
+                  <a href={bundle.reference}>{bundle.reference}</a>
+                </>
+              )}
+            </p>
+          )}
           {!showingDemo && bundle && bundle.subjects.length > 1 && (
             <label className="import-note">
               Subject

@@ -75,7 +75,7 @@ export function DiagnosticPage() {
     <section className="panel clinic" aria-label="Diagnostic">
       <h2>Diagnostic</h2>
       <p className="hint">
-        Scénario simulé. Seuils de règles HRP, pas un modèle entraîné sur des données d’astronautes. Not a medical device.
+        Scénario simulé. Seuils de règles HRP, pas un modèle entraîné sur les données de vol spatial et d'analogues au sol. Simulation de démonstration. Not a medical device.
       </p>
       <div className="clinic-bar" role="toolbar" aria-label="Scénarios simulés">
         {CLINIC_SCENARIOS.map((item) => (

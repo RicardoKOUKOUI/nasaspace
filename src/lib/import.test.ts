@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest'
 import { dashboardDomains, mergeDashboard } from './domainView.ts'
 import { evaluate, evaluateImported } from './engine.js'
 import { FOREST_CONTAMINATION, FOREST_MIN_ROWS, FOREST_SUBSAMPLE, FOREST_TREES, scoreForest } from './forest.ts'
-import { parseImport, parseNumber } from './import.ts'
-import { STARTERS } from './starters.ts'
+import { parseImport, parseNumber, headerReference } from './import.ts'
+import { SOURCE_LABEL, STARTERS } from './starters.ts'
 import { clampFeeling, metricReadings, scoreFeeling, seriesInterval } from './selfReport.ts'
 import { applyWatch, healthDecision, localWatchStream, scoreWatch } from './watch.ts'
 import { trainSubject } from './train.ts'
@@ -27,6 +27,23 @@ describe('parseNumber', () => {
 })
 
 describe('starter files', () => {
+  it('labels each starter with its source and a header reference', () => {
+    const kinds = new Set(STARTERS.map((item) => item.source))
+    expect(kinds).toEqual(new Set(['flight', 'bedrest', 'wearable']))
+    expect(SOURCE_LABEL.flight).toBe('Vol spatial')
+    expect(SOURCE_LABEL.bedrest).toBe('Analogue au sol - alitement')
+    expect(SOURCE_LABEL.wearable).toBe('Population terrestre - montre connectée')
+    for (const starter of STARTERS) {
+      const text = read(starter.file)
+      const result = parseImport(text, starter.file)
+      expect(result.ok, starter.id).toBe(true)
+      expect(result.days.length, starter.id).toBeGreaterThan(0)
+      expect(result.subjects.length, starter.id).toBeGreaterThan(0)
+      expect(headerReference(text), starter.id).toMatch(/^https?:\/\//)
+      expect(result.reference, starter.id).toBe(headerReference(text))
+    }
+  })
+
   it('maps spine DXA without filling ARED or percent BMD', () => {
     const result = parseImport(read('mr035g-spine.csv'), 'mr035g-spine.csv')
     expect(result.ok).toBe(true)

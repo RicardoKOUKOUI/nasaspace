@@ -1,3 +1,4 @@
+# BRSMFMT functional mobility, bed rest. https://nlsp.nasa.gov/search/data/details/dcff3b64-7700-5441-b4c3-2af31b9bb7b0?dataType=EXPERIMENTS
 ﻿ID,Campaign,Subject,Date,Test_Phase,BR_Day,Min. Time,Max. Time,Avg. Time,Obstacles/No. Trials,Ataxia,Stdev Time,SEM,CI
 1,C3A,224,2/25/2005,PRE_TEST,10,13.27,14.78,13.94,0,NA,0.54,0.22,0.43
 2,C3A,224,3/1/2005,PRE_TEST,6,12.7,13.29,13.02,0,NA,0.2,0.08,0.16

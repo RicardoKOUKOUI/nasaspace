@@ -1,3 +1,4 @@
+# BRSMAcet acetaminophen kinetics, bed rest. https://nlsp.nasa.gov/search/data/details/7ab565bb-f9d6-510f-bd07-407caccaeb9f?dataType=EXPERIMENTS
 ﻿ID,Subject,Date,Test_Phase,BR_Day,Time to max concentration (minutes),Max concentration (ug/mL),Half life (minutes),Area under curve,Volume of distribution (L),Clearance (L/min),Area under curve (min/L),"Clearance, predicted (L/min)"
 1,C1G0001,8/31/2004, PRE_TEST, 9,10,12.6,122.5444,1451.5,69.0746,0.3907,2.5611,0.3905
 2,C1G0001,9/10/2004, IN_TEST, 2,10,13.8,156.4331,1756.75,68.536,0.3037,3.3953,0.2945
