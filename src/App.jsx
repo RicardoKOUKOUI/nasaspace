@@ -7,12 +7,21 @@ import { scoreForest } from './lib/forest.ts'
 import { daysForSubject, parseImport } from './lib/import.ts'
 import { DEFAULT_METRIC, METRICS } from './lib/metrics.js'
 import { dashboardDomains, mergeDashboard } from './lib/domainView.ts'
+import { clampFeeling, feelingModels, scoreFeeling } from './lib/selfReport.ts'
 import { STARTERS } from './lib/starters.ts'
 import { COMMS_DELAY_MIN, generateMission, SCENARIOS } from './lib/telemetry.js'
 import modelReport from '../data/model_scores.json'
 
 const STATUS_LABEL = { ready: 'READY', degraded: 'DEGRADED', risk: 'AT RISK', unmeasured: 'NOT MEASURED' }
 const PALETTE = ['#79e4ff', '#7dcec8', '#f0c14a', '#c3b4ff', '#ffb086', '#9fd0ff', '#ff8fa3', '#5ee0a8']
+
+function loadFeel() {
+  try {
+    return JSON.parse(localStorage.getItem('astropulse-feel') || '{}')
+  } catch {
+    return {}
+  }
+}
 
 function loadDone() {
   try {
@@ -48,6 +57,8 @@ export default function App() {
   const [clock, setClock] = useState(6 * 3600 + 12 * 60)
   const [mode, setMode] = useState('demo')
   const [overview, setOverview] = useState(() => dashboardDomains([], []))
+  const [landingModels, setLandingModels] = useState([])
+  const [feel, setFeel] = useState(loadFeel)
   const [bundle, setBundle] = useState(null)
   const [subject, setSubject] = useState('')
   const [notice, setNotice] = useState('')
@@ -108,19 +119,27 @@ export default function App() {
     let cancel = false
     async function loadOverview() {
       const views = []
+      const picked = new Map()
       for (const starter of STARTERS) {
         try {
           const response = await fetch(`/starters/${starter.file}`)
           if (!response.ok) continue
           const parsed = parseImport(await response.text(), starter.file)
-          const subject = parsed.subjects[0]
-          if (!parsed.ok || !subject) continue
-          views.push(dashboardDomains(parsed.measures, daysForSubject(parsed.days, subject)))
+          const subjectId = parsed.subjects[0]
+          if (!parsed.ok || !subjectId) continue
+          const subjectDays = daysForSubject(parsed.days, subjectId)
+          views.push(dashboardDomains(parsed.measures, subjectDays))
+          for (const model of feelingModels(parsed.measures, subjectDays)) {
+            if (!picked.has(model.id)) picked.set(model.id, model)
+          }
         } catch {
           // A missing starter leaves that category blank.
         }
       }
-      if (!cancel && views.length) setOverview(mergeDashboard(views))
+      if (!cancel && views.length) {
+        setOverview(mergeDashboard(views))
+        setLandingModels([...picked.values()])
+      }
     }
     loadOverview()
     return () => { cancel = true }
@@ -159,6 +178,18 @@ export default function App() {
   function returnToDemo(id) {
     setMode('demo')
     setScenario(id)
+  }
+
+  function setFeeling(id, value) {
+    setFeel((current) => {
+      const next = { ...current, [id]: value }
+      try {
+        localStorage.setItem('astropulse-feel', JSON.stringify(next))
+      } catch {
+        /* private mode */
+      }
+      return next
+    })
   }
 
   function setSelf(field, value) {
@@ -247,6 +278,23 @@ export default function App() {
         .sort((a, b) => b.anomaly - a.anomaly)
         .slice(0, 3)
     : []
+  const importedModels = useMemo(
+    () => (showingDemo || !bundle ? [] : feelingModels(bundle.measures, importedDays)),
+    [showingDemo, bundle, importedDays],
+  )
+  const feeling = showingDemo ? landingModels : importedModels
+  const feelingScores = useMemo(() => {
+    const scores = {}
+    for (const model of feeling) {
+      scores[model.id] = scoreFeeling(
+        model.days,
+        model.measures,
+        model.id,
+        clampFeeling(model.interval, feel[model.id]),
+      )
+    }
+    return scores
+  }, [feeling, feel])
   const domainAxes = !showingDemo && bundle ? dashboardDomains(bundle.measures, days) : overview
   const readout = report.readout.length
     ? report.readout
@@ -328,14 +376,36 @@ export default function App() {
               </p>
             ) : null}
           </div>
-          {domainAxes.map((axis) => (
-            <div className="axis" key={axis.id}>
-              <div className="axis-top">
-                <span>{axis.label}</span>
+          {domainAxes.map((axis) => {
+            const model = feeling.find((item) => item.id === axis.id)
+            const score = model ? feelingScores[model.id] : null
+            const value = model ? clampFeeling(model.interval, feel[model.id]) : null
+            return (
+              <div className="axis" key={axis.id}>
+                <div className="axis-top">
+                  <span>{axis.label}</span>
+                  {score?.anomaly != null ? <b>{score.anomaly}</b> : null}
+                </div>
+                <p>{axis.detail}</p>
+                {model && value != null ? (
+                  <FeelingSlider
+                    label={model.interval.measure}
+                    unit={model.interval.unit}
+                    low={model.interval.low}
+                    typical={model.interval.typical}
+                    high={model.interval.high}
+                    value={value}
+                    onChange={(next) => setFeeling(model.id, next)}
+                  />
+                ) : null}
+                {score?.drivers?.length ? (
+                  <p className="hint">
+                    {score.drivers.map((driver) => `${driver.label || driver.feature} ${driver.z}`).join(' · ')}
+                  </p>
+                ) : null}
               </div>
-              <p>{axis.detail}</p>
-            </div>
-          ))}
+            )
+          })}
           {domainAxes.length === 0 && (
             <p className="hint">No heart, sensorimotor, immune, nutrition, renal, or behavior series in this file.</p>
           )}
@@ -513,6 +583,41 @@ export default function App() {
         <span>Public starter tables for the six measured categories. Not a medical device.</span>
       </footer>
     </div>
+  )
+}
+
+function formatBand(value) {
+  const abs = Math.abs(value)
+  if (abs >= 100) return String(Math.round(value))
+  if (abs >= 10) return String(Math.round(value * 10) / 10)
+  return String(Math.round(value * 1000) / 1000)
+}
+
+function FeelingSlider({ label, unit, low, typical, high, value, onChange }) {
+  const span = high - low
+  const step = span > 0 ? span / 40 : 1
+  return (
+    <label className="slider">
+      <span className="slider-top">
+        <span>{label}{unit ? ` (${unit})` : ''}</span>
+        <b>{formatBand(value)}</b>
+      </span>
+      <input
+        type="range"
+        min={low}
+        max={high}
+        step={step}
+        value={value}
+        aria-label={label}
+        disabled={span === 0}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
+      <span className="slider-scale">
+        <i>Low {formatBand(low)}</i>
+        <i>Typical {formatBand(typical)}</i>
+        <i>High {formatBand(high)}</i>
+      </span>
+    </label>
   )
 }
 

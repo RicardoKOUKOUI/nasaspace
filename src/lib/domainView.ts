@@ -20,7 +20,10 @@ export type DashboardDomain = {
   detail: string
 }
 
-function groupOf(domain: DomainId): (typeof ORDER)[number] | null {
+export const DASHBOARD_ORDER = ORDER
+export const DASHBOARD_LABELS = LABELS
+
+export function dashboardGroup(domain: DomainId): (typeof ORDER)[number] | null {
   if (HIDDEN_DASHBOARD_DOMAINS.has(domain)) return null
   if (domain === 'sleep' || domain === 'behavior') return 'behavior'
   if (domain === 'cardio' || domain === 'neuro' || domain === 'immune' || domain === 'nutrition' || domain === 'renal') {
@@ -33,7 +36,7 @@ function groupOf(domain: DomainId): (typeof ORDER)[number] | null {
 export function dashboardDomains(measures: MeasureMeta[], days: DayRecord[]): DashboardDomain[] {
   const parts = new Map<(typeof ORDER)[number], string[]>()
   for (const measure of measures) {
-    const id = groupOf(measure.domain)
+    const id = dashboardGroup(measure.domain)
     if (!id) continue
     const value = latestNumber(days, measure.key)
     if (value == null) continue

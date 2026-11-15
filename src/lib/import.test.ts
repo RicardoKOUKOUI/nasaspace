@@ -6,6 +6,7 @@ import { evaluate, evaluateImported } from './engine.js'
 import { FOREST_CONTAMINATION, FOREST_TREES, scoreForest } from './forest.ts'
 import { parseImport, parseNumber } from './import.ts'
 import { STARTERS } from './starters.ts'
+import { clampFeeling, scoreFeeling, seriesInterval } from './selfReport.ts'
 import { trainSubject } from './train.ts'
 import { generateMission } from './telemetry.js'
 
@@ -273,6 +274,45 @@ describe('scores', () => {
     expect(landing.find((item) => item.id === 'neuro')?.detail).toContain('Average time')
     expect(landing.find((item) => item.id === 'behavior')?.detail).toContain('Sleep')
     expect(landing.some((item) => /bone|radiation|ARED|mSv/i.test(item.label))).toBe(false)
+  })
+
+  it('keeps the astronaut value inside each training interval and rescores it', () => {
+    const files = [
+      ['agbresa-cardio.csv', 'A', 'cardio'],
+      ['brsmfmt.csv', '224', 'neuro'],
+      ['brsmvsi.csv', '7326', 'immune'],
+      ['pmdata-wellness.csv', 'p01', 'behavior'],
+      ['ap010-nutrition.csv', 'CDR', 'nutrition'],
+      ['brsmrf.csv', 'C1G0001', 'renal'],
+    ] as const
+    for (const [file, subject, id] of files) {
+      const parsed = parseImport(read(file), file)
+      const days = parsed.days.filter((day) => day.subject === subject)
+      const interval = seriesInterval(days, parsed.measures, id)
+      expect(interval?.id).toBe(id)
+      expect(interval!.low).toBeLessThanOrEqual(interval!.typical)
+      expect(interval!.typical).toBeLessThanOrEqual(interval!.high)
+      expect(interval!.key).not.toBe('hrv')
+      expect(interval!.key).not.toBe('focus')
+      const seen = days.map((day) => day.values[interval!.key]).filter((value) => typeof value === 'number')
+      expect(interval!.low).toBeGreaterThanOrEqual(Math.min(...seen))
+      expect(interval!.high).toBeLessThanOrEqual(Math.max(...seen))
+      const before = days[days.length - 1]?.values[interval!.key]
+      const typical = scoreFeeling(days, parsed.measures, id, interval!.typical)
+      const edge = scoreFeeling(days, parsed.measures, id, interval!.high === interval!.typical ? interval!.low : interval!.high)
+      expect(days[days.length - 1]?.values[interval!.key]).toBe(before)
+      expect(typical.anomaly).toEqual(expect.any(Number))
+      expect(typical.drivers.length).toBeGreaterThan(0)
+      expect(typical.drivers.length).toBeLessThanOrEqual(3)
+      expect(edge.drivers.length).toBeLessThanOrEqual(3)
+      expect(clampFeeling(interval!, interval!.high + 10)).toBe(interval!.high)
+    }
+    const heart = parseImport(read('agbresa-cardio.csv'), 'agbresa-cardio.csv')
+    const days = heart.days.filter((day) => day.subject === 'A')
+    const interval = seriesInterval(days, heart.measures, 'cardio')
+    const typical = scoreFeeling(days, heart.measures, 'cardio', interval!.typical)
+    const high = scoreFeeling(days, heart.measures, 'cardio', interval!.high)
+    expect(high.anomaly).not.toBe(typical.anomaly)
   })
 
   it('trains the domains that have a public series and scores the later sols', () => {
