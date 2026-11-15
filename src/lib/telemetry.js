@@ -9,7 +9,7 @@ export const COMMS_DELAY_MIN = 20
 export const SCENARIOS = [
   { id: 'nominal', key: '1', label: 'Nominal', hint: 'Cruise baseline' },
   { id: 'storm', key: '2', label: 'Solar storm', hint: 'Particle event' },
-  { id: 'fatigue', key: '3', label: 'Isolation', hint: 'Fatigue and bone' },
+  { id: 'fatigue', key: '3', label: 'Isolation', hint: 'Fatigue and sleep' },
 ]
 
 const SEED = { nominal: 20261015, storm: 20261016, fatigue: 20261017 }

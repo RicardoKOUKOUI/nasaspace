@@ -20,14 +20,17 @@ Open the URL Vite prints (http://localhost:5173).
 
 Demo keys: `1` nominal cruise, `2` solar storm, `3` isolation / fatigue and bone loss. The three-question self-check updates the score immediately. Mark a countermeasure done to show on-board validation.
 
+Import a CSV or JSON from the trend panel, or open a starter file from the menu. The imported screen shows six labels: Cardiovasculaire (AGBRESA hr, sbp, dbp), Neurologie (BRSMFMT, BRSMFSR), Immunité (BRSMVSI, BRSMImmune), Psychologie (PMData sleep, mood, fatigue), Nutrition (Apollo AP010, BRSMAcet), and Santé rénale (BRSMRF). A label stays empty when the open file has no number for it. Bone, radiation, environment, and the one-session muscle tables stay off that screen. Keys `1` `2` `3` return to the simulated record, which still shows the four cruise axes. The clinical score still comes from `evaluate()` and stays blank when the file has none of its columns. Imported rows train an in-browser isolation forest on that person's reference period and score the later sols. The demo forest remains `data/model_scores.json`.
+
 ```bash
-npm run check   # regenerates data/ and checks the three scenarios
-npm run build   # static bundle in dist/
+npm run check            # regenerates data/ and checks the three scenarios
+npm run train:imported   # trains the kept starter tables and scores later sols
+npm run build            # static bundle in dist/
 ```
 
 ## What the console does
 
-1. **Telemetry, four NASA axes.** Cardiovascular (resting heart rate, HRV, blood pressure), bone and muscle (ARED minutes, bone-density proxy), radiation and immunity (daily and cumulative dose, CRP proxy), behavior (sleep plus a 3-question self-check).
+1. **Landing screen, six measured categories.** Cardiovasculaire, Neurologie, Immunité, Psychologie, Nutrition, Santé rénale. Bone, radiation, environment, and the one-session muscle tables are not on that screen. The demo score behind keys 1, 2, and 3 still uses the cruise rules in `evaluate()`.
 2. **Cross-factor score.** Each axis is scored against an operational set-point. Combined drifts (particle dose with inflammation, short sleep with low HRV, missed ARED with faster bone loss) subtract a capped penalty. A cross-factor anomaly index measures how far today sits from the cruise baseline.
 3. **Action copilot.** The active rules pick up to three protocols: storm shelter, inflammation watch, electrolytes, 4-7-8 breathing, ARED, sleep lock, or a crew check-in. Validated actions stay in local storage.
 4. **Live demo switch.** Nominal, solar storm, and isolation / fatigue rebuild the same 30-sol window so a presentation can show the response in one click.

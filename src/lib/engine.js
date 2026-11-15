@@ -132,7 +132,8 @@ const PENALTY = {
   cardio: 4,
 }
 
-export function evaluate(days, self = {}) {
+export function evaluate(days, self = {}, options) {
+  if (options?.allowMissing) return evaluateWithGaps(days, self)
   const today = days[days.length - 1]
   const last7 = days.slice(-7)
   const last3 = days.slice(-3)
@@ -319,4 +320,265 @@ export function evaluate(days, self = {}) {
       { label: 'CRP', value: today.crp.toFixed(1), unit: 'mg/L', tone: today.crp >= 3 ? 'risk' : today.crp >= 1.5 ? 'degraded' : 'ready' },
     ],
   }
+}
+
+function present(value) {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function meanPresent(days, key) {
+  const values = days.map((day) => day[key]).filter(present)
+  if (values.length === 0) return null
+  return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
+function weighted(parts) {
+  const total = parts.reduce((sum, part) => sum + part.weight, 0)
+  if (!total) return null
+  return parts.reduce((sum, part) => sum + part.weight * part.score, 0) / total
+}
+
+function unmeasuredReport(self) {
+  return {
+    unmeasured: true,
+    score: null,
+    status: 'unmeasured',
+    anomaly: null,
+    penalty: 0,
+    lossPct: null,
+    dose3: null,
+    sleep7: null,
+    ared7: null,
+    alerts: [],
+    protocols: [],
+    self,
+    axes: [],
+    readout: [],
+  }
+}
+
+/** Imported rows may omit every clinical field. A missing field is skipped, never treated as zero. */
+function evaluateWithGaps(days, self) {
+  const today = days[days.length - 1]
+  const last7 = days.slice(-7)
+  const last3 = days.slice(-3)
+  const mood = present(self.mood) ? self.mood : present(today.mood) ? today.mood : null
+  const focus = present(self.focus) ? self.focus : present(today.focus) ? today.focus : null
+  const fatigue = present(self.fatigue) ? self.fatigue : present(today.fatigue) ? today.fatigue : null
+
+  const hr7 = meanPresent(last7, 'hr')
+  const hrv7 = meanPresent(last7, 'hrv')
+  const ared7 = meanPresent(last7, 'aredMin')
+  const sleep7 = meanPresent(last7, 'sleep')
+  const dose3 = meanPresent(last3, 'dose')
+  const lossPct = present(today.bmd) ? 100 - today.bmd : null
+
+  const cardioParts = []
+  if (present(today.hr) && hr7 != null) {
+    const hrNow = today.hr * 0.6 + hr7 * 0.4
+    const hrScore = hrNow <= 64 ? scoreToward(hrNow, 52, 42) : scoreToward(hrNow, 64, 96)
+    cardioParts.push({ weight: 0.4, score: hrScore })
+  }
+  if (present(today.hrv) && hrv7 != null) {
+    const hrvNow = today.hrv * 0.6 + hrv7 * 0.4
+    cardioParts.push({ weight: 0.45, score: scoreToward(hrvNow, 55, 18) })
+  }
+  if (present(today.sbp)) {
+    const bpScore = today.sbp > 128 ? scoreToward(today.sbp, 128, 160) : scoreToward(today.sbp, 108, 90)
+    cardioParts.push({ weight: 0.15, score: bpScore })
+  }
+  const cardio = weighted(cardioParts)
+
+  const boneParts = []
+  if (ared7 != null) boneParts.push({ weight: 0.55, score: scoreToward(ared7, 55, 12) })
+  if (lossPct != null) boneParts.push({ weight: 0.45, score: scoreToward(lossPct, 1.25, 3.2) })
+  const bone = weighted(boneParts)
+
+  const radiationParts = []
+  if (dose3 != null) radiationParts.push({ weight: 0.5, score: scoreToward(dose3, 2.3, 12) })
+  if (present(today.cumDose)) radiationParts.push({ weight: 0.2, score: scoreToward(today.cumDose, 62, 130) })
+  if (present(today.crp)) radiationParts.push({ weight: 0.3, score: scoreToward(today.crp, 1.2, 6.5) })
+  const radiation = weighted(radiationParts)
+
+  const behaviorParts = []
+  if (sleep7 != null) behaviorParts.push({ weight: 0.45, score: scoreToward(sleep7, 7.2, 4.2) })
+  if (mood != null) behaviorParts.push({ weight: 0.2, score: (mood / 5) * 100 })
+  if (focus != null) behaviorParts.push({ weight: 0.2, score: (focus / 5) * 100 })
+  if (fatigue != null) behaviorParts.push({ weight: 0.15, score: ((6 - fatigue) / 5) * 100 })
+  const behavior = weighted(behaviorParts)
+
+  const axes = []
+  if (cardio != null) {
+    axes.push({
+      id: 'cardio',
+      label: 'Cardiovascular',
+      score: Math.round(cardio),
+      detail: [
+        present(today.hr) ? `HR ${today.hr} bpm` : null,
+        present(today.hrv) ? `HRV ${today.hrv} ms` : null,
+        present(today.sbp) ? `${today.sbp}/${present(today.dbp) ? today.dbp : '—'}` : null,
+      ].filter(Boolean).join(' · '),
+    })
+  }
+  if (bone != null) {
+    axes.push({
+      id: 'bone',
+      label: 'Bone & muscle',
+      score: Math.round(bone),
+      detail: [
+        ared7 != null ? `ARED 7-sol ${Math.round(ared7)} min` : null,
+        lossPct != null ? `BMD −${lossPct.toFixed(1)}%` : null,
+      ].filter(Boolean).join(' · '),
+    })
+  }
+  if (radiation != null) {
+    axes.push({
+      id: 'radiation',
+      label: 'Radiation & immunity',
+      score: Math.round(radiation),
+      detail: [
+        dose3 != null ? `3-sol ${dose3.toFixed(1)} mSv/d` : null,
+        present(today.crp) ? `CRP ${today.crp.toFixed(1)}` : null,
+      ].filter(Boolean).join(' · '),
+    })
+  }
+  if (behavior != null) {
+    axes.push({
+      id: 'behavior',
+      label: 'Behavior',
+      score: Math.round(behavior),
+      detail: [
+        sleep7 != null ? `Sleep 7-sol ${sleep7.toFixed(1)} h` : null,
+        mood != null ? `mood ${mood}/5` : null,
+      ].filter(Boolean).join(' · '),
+    })
+  }
+
+  if (axes.length === 0) return unmeasuredReport({ mood, focus, fatigue })
+
+  const alerts = []
+  if (dose3 != null && present(today.dose) && (dose3 >= 8 || today.dose >= 10)) {
+    alerts.push({
+      id: 'spe',
+      severity: 'risk',
+      title: 'Solar particle event',
+      detail: 'Dose jumped well above the 1.84 mSv/day cruise baseline.',
+    })
+  }
+  if (present(today.crp) && dose3 != null && today.crp >= 3 && dose3 >= 6) {
+    alerts.push({
+      id: 'rad-immune',
+      severity: 'risk',
+      title: 'Radiation–immune cascade',
+      detail: 'Inflammation rose with the particle dose.',
+    })
+  }
+  if (sleep7 != null && hrv7 != null && hr7 != null && sleep7 < 6 && hrv7 < 40 && hr7 > 68) {
+    alerts.push({
+      id: 'fatigue-cascade',
+      severity: 'risk',
+      title: 'Fatigue–autonomic cascade',
+      detail: 'Short sleep, low heart-rate variability, and a higher resting rate are moving as one pattern.',
+    })
+  }
+  if (ared7 != null && lossPct != null && ared7 < 35 && lossPct > 1.6) {
+    alerts.push({
+      id: 'decond',
+      severity: 'degraded',
+      title: 'Bone and muscle deconditioning',
+      detail: `ARED is under 35 min/day and bone density is down ${lossPct.toFixed(1)}% versus a 1.2% monthly cruise set-point.`,
+    })
+  }
+  if (mood != null && fatigue != null && mood <= 2 && fatigue >= 4 && sleep7 != null && sleep7 < 6) {
+    alerts.push({
+      id: 'isolation',
+      severity: 'degraded',
+      title: 'Behavioral isolation risk',
+      detail: 'Self-report and sleep agree: exhaustion and low mood, with no real-time physician on the link.',
+    })
+  } else if (mood != null && fatigue != null && mood <= 2 && fatigue >= 4) {
+    alerts.push({
+      id: 'acute',
+      severity: 'degraded',
+      title: 'Acute behavioral flag',
+      detail: 'The three-question check just moved mood and exhaustion into the action range.',
+    })
+  }
+  if ((present(today.hrv) && today.hrv < 36) || (present(today.hr) && today.hr > 82)) {
+    alerts.push({
+      id: 'cardio',
+      severity: 'degraded',
+      title: 'Autonomic strain',
+      detail: 'Heart rate or heart-rate variability is off the cruise set-point.',
+    })
+  }
+
+  const penalty = Math.min(16, alerts.reduce((sum, alert) => sum + (PENALTY[alert.id] ?? 0), 0))
+  const blendParts = []
+  if (cardio != null) blendParts.push({ weight: 0.3, score: cardio })
+  if (bone != null) blendParts.push({ weight: 0.22, score: bone })
+  if (radiation != null) blendParts.push({ weight: 0.28, score: radiation })
+  if (behavior != null) blendParts.push({ weight: 0.2, score: behavior })
+  const blended = weighted(blendParts)
+  const score = clamp(Math.round((blended ?? 0) - penalty), 1, 99)
+
+  const seen = new Set()
+  const protocols = []
+  for (const alert of alerts) {
+    for (const id of PROTOCOL_FOR[alert.id] ?? []) {
+      if (seen.has(id)) continue
+      seen.add(id)
+      protocols.push(PROTOCOLS[id])
+      if (protocols.length === 3) break
+    }
+    if (protocols.length === 3) break
+  }
+
+  const zParts = []
+  if (present(today.hr)) zParts.push((today.hr - 58) / 8)
+  if (present(today.hrv)) zParts.push((today.hrv - 62) / 12)
+  if (present(today.sleep)) zParts.push((today.sleep - 7.2) / 0.7)
+  if (present(today.dose)) zParts.push((today.dose - 1.84) / 0.4)
+  if (present(today.crp)) zParts.push((today.crp - 0.7) / 0.45)
+  if (present(today.aredMin)) zParts.push((today.aredMin - 60) / 12)
+  const anomaly = zParts.length
+    ? clamp(Math.round(Math.sqrt(zParts.reduce((sum, z) => sum + z * z, 0) / zParts.length) * 22), 0, 100)
+    : null
+
+  const readout = []
+  if (present(today.hr)) readout.push({ label: 'HR', value: String(today.hr), unit: 'bpm', tone: today.hr > 78 ? 'risk' : today.hr > 70 ? 'degraded' : 'ready' })
+  if (present(today.hrv)) readout.push({ label: 'HRV', value: String(today.hrv), unit: 'ms', tone: today.hrv < 36 ? 'risk' : today.hrv < 50 ? 'degraded' : 'ready' })
+  if (present(today.sbp)) readout.push({ label: 'BP', value: `${today.sbp}/${present(today.dbp) ? today.dbp : '—'}`, unit: 'mmHg', tone: today.sbp > 135 ? 'degraded' : 'ready' })
+  if (present(today.aredMin)) readout.push({ label: 'ARED', value: String(today.aredMin), unit: 'min', tone: today.aredMin < 30 ? 'risk' : today.aredMin < 50 ? 'degraded' : 'ready' })
+  if (present(today.dose)) readout.push({ label: 'Dose', value: today.dose.toFixed(2), unit: 'mSv', tone: today.dose > 8 ? 'risk' : today.dose > 3 ? 'degraded' : 'ready' })
+  if (present(today.cumDose)) readout.push({ label: 'Cumul.', value: today.cumDose.toFixed(1), unit: 'mSv', tone: today.cumDose > 90 ? 'degraded' : 'ready' })
+  if (present(today.sleep)) readout.push({ label: 'Sleep', value: today.sleep.toFixed(1), unit: 'h', tone: today.sleep < 5.5 ? 'risk' : today.sleep < 6.5 ? 'degraded' : 'ready' })
+  if (present(today.bmd) && lossPct != null) readout.push({ label: 'BMD', value: today.bmd.toFixed(1), unit: '%', tone: lossPct > 1.8 ? 'degraded' : 'ready' })
+  if (present(today.crp)) readout.push({ label: 'CRP', value: today.crp.toFixed(1), unit: 'mg/L', tone: today.crp >= 3 ? 'risk' : today.crp >= 1.5 ? 'degraded' : 'ready' })
+
+  return {
+    unmeasured: false,
+    score,
+    status: toneFor(score),
+    anomaly,
+    penalty,
+    lossPct,
+    dose3,
+    sleep7,
+    ared7,
+    alerts,
+    protocols,
+    self: { mood, focus, fatigue },
+    axes,
+    readout,
+  }
+}
+
+const COMPLETE_KEYS = ['hr', 'hrv', 'sbp', 'dbp', 'aredMin', 'bmd', 'dose', 'cumDose', 'crp', 'sleep', 'mood', 'focus', 'fatigue']
+
+export function evaluateImported(days, self = {}) {
+  if (!days.length) return unmeasuredReport(self)
+  const complete = days.every((day) => COMPLETE_KEYS.every((key) => present(day[key])))
+  if (complete) return evaluate(days, self)
+  return evaluate(days, self, { allowMissing: true })
 }
