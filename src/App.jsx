@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Chart } from './components/Chart.jsx'
+import { DiagnosticPage } from './components/DiagnosticPage.jsx'
 import { columnStats, referenceSlice, rollingBaseline, valuesOf } from './lib/baseline.ts'
 import { toCsv } from './lib/csv.js'
 import { evaluate, evaluateImported } from './lib/engine.js'
@@ -14,8 +15,10 @@ import { COMMS_DELAY_MIN, generateMission, SCENARIOS } from './lib/telemetry.js'
 import modelReport from '../data/model_scores.json'
 
 const PALETTE = ['#79e4ff', '#7dcec8', '#f0c14a', '#c3b4ff', '#ffb086', '#9fd0ff', '#ff8fa3', '#5ee0a8']
+const METRIC_SECTIONS = new Set(['cardio', 'neuro', 'immune', 'behavior', 'nutrition', 'renal'])
 const NAV = [
   { id: 'decision', label: 'Décision' },
+  { id: 'diagnostic', label: 'Diagnostic' },
   { id: 'cardio', label: 'Cardiovasculaire' },
   { id: 'neuro', label: 'Neurologie' },
   { id: 'immune', label: 'Immunité' },
@@ -368,7 +371,8 @@ export default function App() {
       </header>
 
       <main className={section === 'decision' ? 'workspace resettle' : 'workspace metric-page resettle'} key={section}>
-        {section !== 'decision' && (
+        {section === 'diagnostic' && <DiagnosticPage />}
+        {METRIC_SECTIONS.has(section) && (
           <section className="panel metric-sheet" aria-label={pageModel?.label || section}>
             <h2>{pageModel?.label}</h2>
             <p className="hint">{section === 'cardio' ? 'Montre · HR, SBP, DBP. Aucun appareil Bluetooth n’est appairé.' : 'Dernière ligne d’entraînement.'}</p>

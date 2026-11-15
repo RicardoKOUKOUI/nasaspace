@@ -110,6 +110,67 @@ button, input { font: inherit; color: inherit; }
   color: var(--color-ink);
 }
 .reading small { font-size: 16px; color: var(--color-cyan); }
+
+.clinic { display: flex; flex-direction: column; gap: 12px; }
+.clinic-bar { display: flex; flex-wrap: wrap; gap: 8px; }
+.clinic-bar .scenario b { text-transform: none; letter-spacing: 0.02em; font-size: 14px; }
+.clinic-bar .scenario.active { border-color: var(--color-cyan); color: var(--color-cyan); }
+.clinic-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 16px;
+}
+.dx-card {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(240, 193, 74, 0.35);
+  background: rgba(240, 193, 74, 0.05);
+}
+.clinic h3 {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+.check-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+}
+.check-row b { display: block; font-weight: 600; }
+.check-row small { color: var(--color-cyan); }
+.clinic-groups { margin-top: 14px; }
+.clinic-groups .reading strong { font-size: 28px; }
+.manual-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+.manual-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+.manual-grid input {
+  border: 1px solid rgba(126, 176, 214, 0.28);
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+@media (max-width: 860px) {
+  .clinic-grid { grid-template-columns: 1fr; }
+}
 .foot { grid-area: foot; }
 
 .topbar, .panel {
