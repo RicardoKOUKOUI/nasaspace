@@ -3,11 +3,11 @@ import { parseAppleHealth } from './earthDemo.ts'
 import { describe, expect, it } from 'vitest'
 import { dashboardDomains, mergeDashboard } from './domainView.ts'
 import { evaluate, evaluateImported } from './engine.js'
-import { FOREST_CONTAMINATION, FOREST_TREES, scoreForest } from './forest.ts'
+import { FOREST_CONTAMINATION, FOREST_MIN_ROWS, FOREST_SUBSAMPLE, FOREST_TREES, scoreForest } from './forest.ts'
 import { parseImport, parseNumber } from './import.ts'
 import { STARTERS } from './starters.ts'
 import { clampFeeling, metricReadings, scoreFeeling, seriesInterval } from './selfReport.ts'
-import { applyWatch, HEALTH_CUTOFF, healthDecision, localWatchStream, scoreWatch } from './watch.ts'
+import { applyWatch, healthDecision, localWatchStream, scoreWatch } from './watch.ts'
 import { trainSubject } from './train.ts'
 import { generateMission } from './telemetry.js'
 
@@ -203,7 +203,7 @@ describe('scores', () => {
     expect(days[15]?.values.kes0).toBeUndefined()
   })
 
-  it('trains on PRE_TEST and flags the acetaminophen half-life shift', () => {
+  it('does not invent a forest score for a short acetaminophen series', () => {
     const acet = parseImport(read('brsmacet.csv'), 'brsmacet.csv')
     const days = acet.days.filter((day) => day.subject === 'C1G0001')
     expect(days.filter((day) => day.phase === 'PRE_TEST')).toHaveLength(1)
@@ -211,24 +211,22 @@ describe('scores', () => {
     const report = scoreForest(days, acet.measures)
     expect(FOREST_TREES).toBe(200)
     expect(FOREST_CONTAMINATION).toBe(0.02)
+    expect(FOREST_SUBSAMPLE).toBe(256)
+    expect(days.length).toBeLessThan(FOREST_MIN_ROWS)
+    expect(report.ready).toBe(false)
+    expect(report.anomaly).toBeNull()
     expect(report.referenceKind).toBe('pre')
-    expect(report.referenceSols).toBe(1)
-    const pre = report.perSol.find((item) => item.phase === 'PRE_TEST')
-    const spike = report.perSol.find((item) => item.phase === 'IN_TEST' && item.sol === 56)
-    expect(pre?.anomaly).toBeLessThan(40)
-    expect(spike?.anomaly).toBeGreaterThanOrEqual(40)
-    expect(spike?.drivers[0]?.feature).toBe('halfLife')
     expect(days.find((day) => day.sol === 56)?.values.halfLife).not.toBe(0)
   })
 
-  it('flags renal clearance from the personal baseline', () => {
+  it('does not invent a forest score for a short renal series', () => {
     const renal = parseImport(read('brsmrf.csv'), 'brsmrf.csv')
     const days = renal.days.filter((day) => day.subject === 'C1G0001')
     const report = scoreForest(days, renal.measures)
-    const spike = report.perSol.find((item) => item.phase === 'IN_TEST' && item.sol === 7)
-    expect(spike?.anomaly).toBeGreaterThanOrEqual(40)
-    expect(spike?.drivers[0]?.feature).toBe('creatinineClearance')
-    expect(spike?.drivers[0]?.z).toBeGreaterThan(10)
+    expect(days.length).toBeLessThan(FOREST_MIN_ROWS)
+    expect(report.ready).toBe(false)
+    expect(report.anomaly).toBeNull()
+    expect(days.find((day) => day.phase === 'IN_TEST' && day.sol === 7)?.values.creatinineClearance).toEqual(expect.any(Number))
   })
 
   it('shows only domains that have a measured series', () => {
@@ -302,10 +300,15 @@ describe('scores', () => {
       const typical = scoreFeeling(days, parsed.measures, id, interval!.typical)
       const edge = scoreFeeling(days, parsed.measures, id, interval!.high === interval!.typical ? interval!.low : interval!.high)
       expect(days[days.length - 1]?.values[interval!.key]).toBe(before)
-      expect(typical.anomaly).toEqual(expect.any(Number))
-      expect(typical.drivers.length).toBeGreaterThan(0)
-      expect(typical.drivers.length).toBeLessThanOrEqual(3)
-      expect(edge.drivers.length).toBeLessThanOrEqual(3)
+      if (days.length < FOREST_MIN_ROWS) {
+        expect(typical.anomaly).toBeNull()
+        expect(edge.anomaly).toBeNull()
+      } else {
+        expect(typical.anomaly).toEqual(expect.any(Number))
+        expect(typical.drivers.length).toBeGreaterThan(0)
+        expect(typical.drivers.length).toBeLessThanOrEqual(3)
+        expect(edge.drivers.length).toBeLessThanOrEqual(3)
+      }
       expect(clampFeeling(interval!, interval!.high + 10)).toBe(interval!.high)
     }
     const heart = parseImport(read('agbresa-cardio.csv'), 'agbresa-cardio.csv')
@@ -313,7 +316,8 @@ describe('scores', () => {
     const interval = seriesInterval(days, heart.measures, 'cardio')
     const typical = scoreFeeling(days, heart.measures, 'cardio', interval!.typical)
     const high = scoreFeeling(days, heart.measures, 'cardio', interval!.high)
-    expect(high.anomaly).not.toBe(typical.anomaly)
+    expect(typical.anomaly).toBeNull()
+    expect(high.anomaly).toBeNull()
   })
 
   it('scores a local watch packet and applies the seuil 40 decision', () => {
@@ -324,10 +328,11 @@ describe('scores', () => {
     expect(stream.every((sample) => sample.source === 'local-watch-shape')).toBe(true)
     const resting = scoreWatch(days, heart.measures, stream[0]!)
     const latest = scoreWatch(days, heart.measures, stream[1]!)
-    expect(resting.anomaly).toBeLessThan(HEALTH_CUTOFF)
-    expect(resting.decision).toBe('en bonne santé')
-    expect(latest.anomaly).toBeGreaterThanOrEqual(HEALTH_CUTOFF)
-    expect(latest.decision).toBe('à consulter')
+    expect(days.length).toBeLessThan(FOREST_MIN_ROWS)
+    expect(resting.anomaly).toBeNull()
+    expect(resting.decision).toBeNull()
+    expect(latest.anomaly).toBeNull()
+    expect(latest.decision).toBeNull()
     expect(healthDecision(39)).toBe('en bonne santé')
     expect(healthDecision(40)).toBe('à consulter')
     const neuro = parseImport(read('brsmfmt.csv'), 'brsmfmt.csv')
@@ -384,9 +389,7 @@ describe('scores', () => {
     expect(days[0]?.values.dose).toBeUndefined()
     const trained = trainSubject(days, heart.measures)
     expect(trained.referenceSols).toBe(1)
-    expect(trained.later.map((item) => item.sol)).toEqual([30, 60])
-    expect(trained.later.every((item) => item.drivers.length > 0 && item.drivers.length <= 3)).toBe(true)
-    expect(trained.later.every((item) => item.drivers.every((driver) => ['hr', 'sbp', 'dbp'].includes(driver.feature)))).toBe(true)
+    expect(trained.later).toEqual([])
     const wellness = parseImport(read('pmdata-wellness.csv'), 'pmdata-wellness.csv')
     const person = wellness.days.filter((day) => day.subject === 'p01')
     expect(person[0]?.sleep).toEqual(expect.any(Number))

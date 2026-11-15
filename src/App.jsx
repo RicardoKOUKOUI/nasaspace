@@ -4,15 +4,15 @@ import { DiagnosticPage } from './components/DiagnosticPage.jsx'
 import { columnStats, referenceSlice, rollingBaseline, valuesOf } from './lib/baseline.ts'
 import { toCsv } from './lib/csv.js'
 import { evaluate, evaluateImported } from './lib/engine.js'
-import { scoreForest } from './lib/forest.ts'
+import { CRUISE_MEASURES, cruiseRecords, scoreForest } from './lib/forest.ts'
 import { daysForSubject, parseImport } from './lib/import.ts'
 import { DEFAULT_METRIC, METRICS } from './lib/metrics.js'
 import { dashboardDomains, mergeDashboard } from './lib/domainView.ts'
 import { feelingModels, metricReadings } from './lib/selfReport.ts'
-import { HEALTH_CUTOFF_NAME, localWatchStream, scoreWatch } from './lib/watch.ts'
+import { HEALTH_CUTOFF_NAME, healthDecision, localWatchStream } from './lib/watch.ts'
 import { STARTERS } from './lib/starters.ts'
 import { COMMS_DELAY_MIN, generateMission, SCENARIOS } from './lib/telemetry.js'
-import modelReport from '../data/model_scores.json'
+import { t } from './i18n/index.ts'
 
 const PALETTE = ['#79e4ff', '#7dcec8', '#f0c14a', '#c3b4ff', '#ffb086', '#9fd0ff', '#ff8fa3', '#5ee0a8']
 const METRIC_SECTIONS = new Set(['cardio', 'neuro', 'immune', 'behavior', 'nutrition', 'renal'])
@@ -106,12 +106,14 @@ export default function App() {
     [showingDemo, importedDays, self.mood, self.focus, self.fatigue],
   )
   const report = showingDemo ? demoReport : importReport
-  const demoForest = modelReport.scenarios[scenario]
+  const demoRecords = useMemo(() => cruiseRecords(mission.days), [mission])
+  const demoForest = useMemo(() => scoreForest(demoRecords, CRUISE_MEASURES), [demoRecords])
   const importForest = useMemo(
     () => (showingDemo || !bundle ? null : scoreForest(importedDays, bundle.measures)),
     [showingDemo, importedDays, bundle],
   )
   const forest = showingDemo ? demoForest : importForest
+  const datasetLabel = showingDemo ? `simulation ${scenario}` : (bundle?.label || subject || 'import')
   const metrics = showingDemo
     ? METRICS.filter((item) => !['dose', 'aredMin', 'bmd', 'crp'].includes(item.id))
     : (bundle?.measures ?? []).map(viewOf)
@@ -285,10 +287,6 @@ export default function App() {
     [cardioModel],
   )
   const watchPayload = watchStream[watchTick % Math.max(watchStream.length, 1)] ?? null
-  const watchScore = useMemo(
-    () => (cardioModel && watchPayload ? scoreWatch(cardioModel.days, cardioModel.measures, watchPayload) : null),
-    [cardioModel, watchPayload],
-  )
   useEffect(() => {
     if (watchStream.length < 2) return undefined
     const id = setInterval(() => setWatchTick((value) => value + 1), 5000)
@@ -391,24 +389,27 @@ export default function App() {
         <>
         <section className="panel" aria-label="Decision">
           <h2>Décision</h2>
-          {watchPayload && watchScore?.anomaly != null ? (
+          {forest?.ready && forest.anomaly != null ? (
             <div className="score-block">
-              <em className={watchScore.decision === 'à consulter' ? 'status-risk' : 'status-ready'}>{watchScore.anomaly}%</em>
-              <div className={watchScore.decision === 'à consulter' ? 'status-risk' : 'status-ready'} style={{ fontFamily: 'Barlow Condensed, sans-serif', letterSpacing: '0.16em', marginTop: 4 }}>
-                {watchScore.decision}
+              <em className={healthDecision(forest.anomaly) === 'à consulter' ? 'status-risk' : 'status-ready'}>{forest.anomaly}%</em>
+              <div className={healthDecision(forest.anomaly) === 'à consulter' ? 'status-risk' : 'status-ready'} style={{ fontFamily: 'Barlow Condensed, sans-serif', letterSpacing: '0.16em', marginTop: 4 }}>
+                {healthDecision(forest.anomaly)}
               </div>
               <p>
                 {HEALTH_CUTOFF_NAME}. en bonne santé sous 40, à consulter à partir de 40.
               </p>
-              <p className="hint">
-                Signal local en forme de montre : HR {watchPayload.hr} bpm · SBP {watchPayload.sbp} mmHg · DBP {watchPayload.dbp} mmHg. Aucun appareil Bluetooth n’est appairé.
-              </p>
-              {watchScore.drivers.length > 0 && (
-                <p className="hint">{watchScore.drivers.map((driver) => `${driver.label || driver.feature} ${driver.z}`).join(' · ')}</p>
+              <p className="hint">{t('forest.provenance', { n: forest.referenceSols, dataset: datasetLabel })}</p>
+              {forest.drivers.length > 0 && (
+                <p className="hint">{forest.drivers.map((driver) => `${driver.label || driver.feature} ${driver.z}`).join(' · ')}</p>
               )}
             </div>
           ) : (
-            <p className="hint">Signal local en cours.</p>
+            <p>{t('forest.insufficient')}</p>
+          )}
+          {watchPayload && (
+            <p className="hint">
+              Signal local en forme de montre : HR {watchPayload.hr} bpm · SBP {watchPayload.sbp} mmHg · DBP {watchPayload.dbp} mmHg. Aucun appareil Bluetooth n’est appairé.
+            </p>
           )}
         </section>
 
