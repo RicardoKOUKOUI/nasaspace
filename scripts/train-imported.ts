@@ -9,8 +9,9 @@ const root = new URL('..', import.meta.url)
 console.log(`Isolation Forest · ${FOREST_TREES} trees · contamination ${FOREST_CONTAMINATION}`)
 console.log('Reference: PRE_TEST when present, otherwise the first half (at most 14 sols).')
 console.log('Each later sol: anomaly score and the 3 strongest rolling-baseline drivers.')
-console.log('Axes without a public per-person table in this run: bone (aredMin, bmd); radiation (dose, cumDose).')
-console.log('HRV and focus are not columns in the tables below, so they are not scored.')
+console.log('Shown domains: heart, sensorimotor, immune, nutrition, renal, behavior.')
+console.log('Left off the dashboard: bone/ARED, radiation dose, cabin air, one-session muscle tables.')
+console.log('HRV and focus are not columns in these tables, so they are not scored.')
 
 for (const starter of STARTERS) {
   const text = readFileSync(new URL(`public/starters/${starter.file}`, root), 'utf8')

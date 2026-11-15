@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { parseAppleHealth } from './earthDemo.ts'
 import { describe, expect, it } from 'vitest'
+import { dashboardDomains } from './domainView.ts'
 import { evaluate, evaluateImported } from './engine.js'
 import { FOREST_CONTAMINATION, FOREST_TREES, scoreForest } from './forest.ts'
 import { parseImport, parseNumber } from './import.ts'
@@ -228,8 +229,41 @@ describe('scores', () => {
     expect(spike?.drivers[0]?.z).toBeGreaterThan(10)
   })
 
-  it('trains the cockpit axes that have a public series and scores the later sols', () => {
-    expect(STARTERS.map((item) => item.file)).toEqual(['agbresa-cardio.csv', 'pmdata-wellness.csv'])
+  it('shows only domains that have a measured series', () => {
+    const heart = parseImport(read('agbresa-cardio.csv'), 'agbresa-cardio.csv')
+    const heartDays = heart.days.filter((day) => day.subject === 'A')
+    const heartView = dashboardDomains(heart.measures, heartDays)
+    expect(heartView.map((item) => item.id)).toEqual(['cardio'])
+    expect(heartView[0]?.detail).toContain('Heart rate')
+    expect(heartView[0]?.detail).not.toContain('HRV')
+    const neuro = parseImport(read('brsmfmt.csv'), 'brsmfmt.csv')
+    const neuroDays = neuro.days.filter((day) => day.subject === '224')
+    expect(dashboardDomains(neuro.measures, neuroDays).map((item) => item.id)).toEqual(['neuro'])
+    const muscle = parseImport(read('mr035g-spine.csv'), 'mr035g-spine.csv')
+    expect(dashboardDomains(muscle.measures, muscle.days).map((item) => item.id)).toEqual([])
+    const dose = parseImport(read('radlab.csv'), 'radlab.csv')
+    expect(dashboardDomains(dose.measures, dose.days).map((item) => item.id)).toEqual([])
+    const cabin = parseImport(read('dto623-cabin-air.csv'), 'dto623-cabin-air.csv')
+    expect(dashboardDomains(cabin.measures, cabin.days).map((item) => item.id)).toEqual([])
+    const wellness = parseImport(read('pmdata-wellness.csv'), 'pmdata-wellness.csv')
+    const person = wellness.days.filter((day) => day.subject === 'p01')
+    const behavior = dashboardDomains(wellness.measures, person)
+    expect(behavior.map((item) => item.id)).toEqual(['behavior'])
+    expect(behavior[0]?.detail).not.toContain('Focus')
+  })
+
+  it('trains the domains that have a public series and scores the later sols', () => {
+    expect(STARTERS.map((item) => item.file)).toEqual([
+      'agbresa-cardio.csv',
+      'brsmfmt.csv',
+      'brsmfsr.csv',
+      'brsmvsi.csv',
+      'brsmimmune-cd8.csv',
+      'ap010-nutrition.csv',
+      'brsmacet.csv',
+      'brsmrf.csv',
+      'pmdata-wellness.csv',
+    ])
     const heart = parseImport(read('agbresa-cardio.csv'), 'agbresa-cardio.csv')
     const days = heart.days.filter((day) => day.subject === 'A')
     expect(days.map((day) => day.sol)).toEqual([1, 30, 60])

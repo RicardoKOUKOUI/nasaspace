@@ -6,6 +6,7 @@ import { evaluate, evaluateImported } from './lib/engine.js'
 import { scoreForest } from './lib/forest.ts'
 import { daysForSubject, parseImport } from './lib/import.ts'
 import { DEFAULT_METRIC, METRICS } from './lib/metrics.js'
+import { dashboardDomains } from './lib/domainView.ts'
 import { STARTERS } from './lib/starters.ts'
 import { COMMS_DELAY_MIN, generateMission, SCENARIOS } from './lib/telemetry.js'
 import modelReport from '../data/model_scores.json'
@@ -227,6 +228,7 @@ export default function App() {
         .sort((a, b) => b.anomaly - a.anomaly)
         .slice(0, 3)
     : []
+  const domainAxes = !showingDemo && bundle ? dashboardDomains(bundle.measures, days) : []
   const readout = report.readout.length
     ? report.readout
     : (bundle?.measures ?? []).slice(0, 6).map((measure) => {
@@ -304,7 +306,7 @@ export default function App() {
               </p>
             ) : null}
           </div>
-          {report.axes.map((axis) => (
+          {showingDemo && report.axes.map((axis) => (
             <div className="axis" key={axis.id}>
               <div className="axis-top">
                 <span>{axis.label}</span>
@@ -316,8 +318,19 @@ export default function App() {
               <p>{axis.detail}</p>
             </div>
           ))}
-          {report.unmeasured && (
-            <p className="hint">No heart rate, ARED, mSv dose, or sleep column in this file. Those rules stay off.</p>
+          {!showingDemo && domainAxes.map((axis) => (
+            <div className="axis" key={axis.id}>
+              <div className="axis-top">
+                <span>{axis.label}</span>
+              </div>
+              <p>{axis.detail}</p>
+            </div>
+          ))}
+          {!showingDemo && domainAxes.length > 0 && (
+            <p className="hint">Measured columns only. Bone, radiation, cabin air, and one-session muscle stay off this screen.</p>
+          )}
+          {!showingDemo && domainAxes.length === 0 && (
+            <p className="hint">No heart, sensorimotor, immune, nutrition, renal, or behavior series in this file.</p>
           )}
         </section>
 
@@ -421,13 +434,17 @@ export default function App() {
           <p className="delay">
             Ground round-trip is {COMMS_DELAY_MIN} minutes. This plan does not wait for it.
           </p>
-          {report.unmeasured && (
+          {!showingDemo && report.unmeasured && (
             <div className="alert calm">
-              <b>Clinical score not measured</b>
-              <p>Imported columns stay in their own domain. A missing dose or ARED minute is not a zero, and it does not start a protocol.</p>
+              <b>Clinical cruise score off</b>
+              <p>
+                {domainAxes.length
+                  ? `This file shows ${domainAxes.map((axis) => axis.label).join(', ')}. Bone, radiation, cabin air, and one-session muscle are not scored here.`
+                  : 'This file has none of the domains on this screen, so no cruise protocol starts.'}
+              </p>
             </div>
           )}
-          {!report.unmeasured && report.alerts.length === 0 && (
+          {showingDemo && !report.unmeasured && report.alerts.length === 0 && (
             <div className="alert calm">
               <b>No cross-factor alert</b>
               <p>The four axes are inside the cruise set-points. Continue the daily plan.</p>
