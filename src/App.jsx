@@ -4,6 +4,7 @@ import { toCsv } from './lib/csv.js'
 import { evaluate } from './lib/engine.js'
 import { DEFAULT_METRIC, METRICS } from './lib/metrics.js'
 import { COMMS_DELAY_MIN, generateMission, SCENARIOS } from './lib/telemetry.js'
+import modelReport from '../data/model_scores.json'
 
 const STATUS_LABEL = { ready: 'READY', degraded: 'DEGRADED', risk: 'AT RISK' }
 
@@ -40,6 +41,7 @@ export default function App() {
     [mission, self.mood, self.focus, self.fatigue],
   )
   const metric = METRICS.find((item) => item.id === metricId) ?? METRICS[0]
+  const forest = modelReport.scenarios[scenario]
 
   useEffect(() => {
     const id = setInterval(() => setClock((value) => value + 1), 1000)
@@ -138,9 +140,16 @@ export default function App() {
               {STATUS_LABEL[report.status]}
             </div>
             <div className="score-meta">
+              <span>FOREST {forest.anomaly}</span>
               <span>ANOMALY {report.anomaly}</span>
               <span>{report.penalty > 0 ? `CROSS −${report.penalty}` : 'CROSS 0'}</span>
             </div>
+            <p className="hint">
+              Isolation Forest · {forest.flaggedSols}/30 sols
+              {forest.anomaly >= 40 && forest.drivers.length > 0
+                ? ` · ${forest.drivers.map((item) => item.feature).join(', ')}`
+                : ''}
+            </p>
           </div>
           {report.axes.map((axis) => (
             <div className="axis" key={axis.id}>

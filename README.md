@@ -45,7 +45,7 @@ These are published anchors, not a clinical clearance:
 
 The 30-sol table in `data/telemetry_data.csv` and `data/telemetry_data.json` is **synthetic**. It is calibrated to those set-points so the console still runs when the link is down. It is not a NASA OSDR export and it is not a medical record.
 
-A longer flight record can replace the generator without changing the UI: `generateMission()` is the only data source the score reads. Thirty points are too few for a meaningful Isolation Forest, so this version uses weighted clinical rules plus a baseline anomaly index. That keeps every alert explainable on stage.
+Mission Readiness and the countermeasures come from the weighted clinical rules in `src/lib/engine.js`, so every alert on screen says which signals fired it. A separate Isolation Forest (`model/train.py`) is trained only on the nominal cruise and writes `FOREST` on the console. It answers a different question: does this sol still look like a healthy cruise? See `model/README.md`.
 
 ## Scoring
 
